@@ -1,0 +1,12 @@
+instruction: -> no_instruction
+register:  _NOMATCH
+label: _NOMATCH
+immediate: _NOMATCH
+
+NAME: /\w+/
+_NOMATCH: /(?!_)_/
+
+%ignore WS_INLINE
+%ignore /;[^\n]+/
+%import common.WS_INLINE
+%import common.NEWLINE -> _NEWLINE
