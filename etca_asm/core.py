@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Callable, TYPE_CHECKING
+from typing import Callable, TYPE_CHECKING, NamedTuple
 
 import lark.load_grammar
 from frozendict import frozendict
@@ -51,7 +52,8 @@ class Extension:
         def dec(f):
             markers = frozendict(kwargs)
             i = 0
-            while (sid := f'{f.__name__}_{i}') in self.syntax_elements_by_id:
+            f_name = f.__name__ if f.__name__.isidentifier() else "unknown"
+            while (sid := f'{f_name}_{i}') in self.syntax_elements_by_id:
                 i += 1
             self.syntax_elements[markers].append(se := SyntaxElement(self, category, grammar, f, sid, markers))
             self.syntax_elements_by_id[sid] = se
@@ -79,11 +81,25 @@ class Extension:
 core = Extension(None, "core", "Core Assembly", True)
 
 
+def _resolve_label(context, name: tuple[int, str]) -> int | None:
+    full_name = '.'.join((*context.last_labels[:name[0]], name[1]))
+    if full_name in context.labels:
+        return context.labels[full_name]
+    else:
+        context.missing_labels.add(full_name)
+        return None
+
+
 @core.set_init
 def core_init(context):
     context.enabled_extensions = [e for e in available_extensions.values() if e.default_on]
     context.modes = set()
-    context.start_position = 0x8000
+    context.ip = 0x8000
+    context.labels = {}
+    context.last_labels = ['']
+    context.missing_labels = set()
+    context.changed_labels = set()
+    context.resolve_label = partial(_resolve_label, context)
     for e in available_extensions.values():
         if e.init is not None and e is not core:
             e.init(context)
@@ -92,12 +108,40 @@ def core_init(context):
 
 @core.inst('NAME ":"')
 def global_label(context, name: str):
-    raise NotImplementedError
+    context.last_labels = [str(name)]
+    if context.labels.get(name, None) != context.ip:
+        context.changed_labels.add(name)
+    context.labels[name] = context.ip
+    return b''
 
 
 @core.inst(r'/\.+/ NAME ":"')
 def local_label(context, dots: str, name: str):
-    raise NotImplementedError
+    dot_count = len(dots)
+    while len(context.last_labels) < dot_count:
+        context.last_labels.append('')
+    context.last_labels[dot_count:] = [name]
+    full_name = '.'.join((*context.last_labels, name))
+    if context.labels.get(full_name, None) != context.ip:
+        context.changed_labels.add(full_name)
+    context.labels[full_name] = context.ip
+    return b''
+
+
+@core.register_syntax('label', 'NAME')
+def global_label_reference(context, name: str):
+    return 0, str(name)
+
+
+@core.register_syntax('label', r'/\.+/ NAME')
+def local_label_reference(context, dots, name: str):
+    return len(dots), str(name)
+
+
+core.register_syntax('immediate', '/[0-9]+(_[0-9]+)*/', lambda _, x: int(str(x), 10))
+core.register_syntax('immediate', '/0[bB]_?[01]+(_[01]+)*/', lambda _, x: int(x[2:].removeprefix('_'), 2))
+core.register_syntax('immediate', '/0[oO]_?[0-7]+(_[0-7]+)*/', lambda _, x: int(x[2:].removeprefix('_'), 8))
+core.register_syntax('immediate', '/0x_?[0-9a-f]+(_[0-9a-f]+)*/i', lambda _, x: int(x[2:].removeprefix('_'), 16))
 
 
 class _CompileInstruction(Transformer):
@@ -122,11 +166,23 @@ def reject(cond=True, *args):
         raise _RejectionError(args)
 
 
+class InstructionOutput(NamedTuple):
+    start_ip: int
+    binary: bytes
+    raw_line: str
+
+
+@dataclass()
+class AssemblyResult:
+    output: list[InstructionOutput]
+
+
 class Assembler:
     current_parser: Lark
 
     def __init__(self):
         self.context = Context()
+        self.context.output = []
         self.context.reload_extensions = self.reload_extensions
         core.init(self.context)
 
@@ -158,8 +214,24 @@ class Assembler:
             raise NotImplementedError("Ambiguity is not implemented")
         inst, = options
         result = _CompileInstruction(self.context).transform(inst)
+        if result is not None:
+            self.context.output.append(InstructionOutput(self.context.ip, result, line))
+            self.context.ip += len(result)
         print(result)
 
     def single_pass(self, full_text: str):
         for line in full_text.splitlines(False):
             self.handle_instruction(line)
+
+    def n_pass(self, full_text) -> AssemblyResult:
+        self.single_pass(full_text)
+        while self.context.missing_labels or self.context.changed_labels:
+            old = self.context.missing_labels, self.context.changed_labels
+            old_labels = self.context.labels.copy()
+            core.init(self.context)
+            self.context.labels = old_labels
+            self.context.output = []
+            self.single_pass(full_text)
+            if old == (self.context.missing_labels, self.context.changed_labels):
+                raise ValueError(f"Stuck without further progress, still missing labels {self.context.missing_labels}")
+        return AssemblyResult(self.context.output)

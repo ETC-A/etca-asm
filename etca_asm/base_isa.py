@@ -94,7 +94,7 @@ def base_computations_imm(context, inst: str, reg: int, imm: int):
     if op < 12:
         reject(not isinstance(imm, int) or not (-16 <= imm < 16))
     else:
-        reject(not isinstance(imm, int) or not (0 <= imm < 31))
+        reject(not isinstance(imm, int) or not (0 <= imm < 32), imm)
     return build((0b0101, 4), (op, 4), (reg, 3), (imm & 0x1F, 5))
 
 
@@ -149,13 +149,17 @@ JUMP_NAMES = {
 }
 
 
-@base.inst(f'/j{oneof(*JUMP_NAMES)}/ label', strict=False)
+@base.inst(f'/j{oneof(*JUMP_NAMES)}/ label')
 def base_jumps(context, inst: str, label: str):
     inst = inst.removeprefix('j')
-    op = INSTRUCTIONS[inst]
-    target = context.resolve_label(label) - context.current_position
-    reject(not (-256 <= target < 256))
-    return build((0b100, 3), (target & 100 >> 8, 1), (op, 4), (target & 0xFF, 8))
+    op = JUMP_NAMES[inst]
+    target = context.resolve_label(label)
+    if target is None:
+        offset = 0
+    else:
+        offset = target - context.ip
+    reject(not (-256 <= offset < 256))
+    return build((0b100, 3), (offset & 100 >> 8, 1), (op, 4), (offset & 0xFF, 8))
 
 
 @base.inst('"nop"')

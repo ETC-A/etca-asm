@@ -5,9 +5,10 @@ from etca_asm.core import Assembler
 
 ass = Assembler()
 
-ass.single_pass("""
+ass.n_pass("""
 .syntax prefix
-.strict
-addx %rx4, %rx7
-jmp aa
+
+mov %r0, 1
+slo %r0, 0x1F
+
 """)
