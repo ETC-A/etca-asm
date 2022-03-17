@@ -1,7 +1,5 @@
 instruction: -> no_instruction
-register:  _NOMATCH
-label: _NOMATCH
-immediate: _NOMATCH
+instruction_raw: instruction
 
 NAME: /\w+/
 _NOMATCH: /(?!_)_/

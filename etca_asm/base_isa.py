@@ -130,6 +130,54 @@ def base_mtcr(context, _, reg, port):
     return build((0b0101, 4), (0xF, 4), (reg, 3), (port, 4), (0, 1))
 
 
+@base.register_syntax("control_register", "/cr[0-9]+/")
+def cr_n(context, cr):
+    return int(cr.removeprefix('cr'))
+
+
+NAMED_CRS = {
+    "cpuid": 0,
+    "exten": 1
+}
+
+
+@base.register_syntax("control_register", f"/{oneof(*NAMED_CRS)}/")
+def named_cr(context, name):
+    return NAMED_CRS[name]
+
+
+@base.inst('/movx?/ register_raw "," control_register', strict=False)
+@base.inst('/movx/ register_raw "," control_register', strict=True)
+def mov_from_cr(context, _, reg, cr):
+    return context.macro(f"""
+        mfcrx {reg}, {cr}
+    """)
+
+
+@base.inst('/movx?/ control_register "," register_raw', strict=False)
+@base.inst('/movx/ control_register "," register_raw', strict=True)
+def mov_to_cr(context, _, cr, reg):
+    return context.macro(f"""
+        mtcrx {reg}, {cr}
+    """)
+
+
+@base.inst('/movx?/ register_raw "," "[" (register_raw|immediate_raw) "]"', strict=False)
+@base.inst('/movx/ register_raw "," "[" (register_raw|immediate_raw) "]"', strict=True)
+def mov_from_mem(context, _, reg, arg):
+    return context.macro(f"""
+        ld {reg}, {arg}
+    """)
+
+
+@base.inst('/movx?/ "[" register_raw "]" "," (register_raw|immediate_raw)', strict=False)
+@base.inst('/movx/ "[" register_raw "]" "," (register_raw|immediate_raw)', strict=True)
+def mov_to_mem(context, _, reg, arg):
+    return context.macro(f"""
+        st {reg}, {arg}
+    """)
+
+
 JUMP_NAMES = {
     "z": 0,
     "nz": 1,

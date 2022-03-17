@@ -145,11 +145,14 @@ core.register_syntax('immediate', '/0x_?[0-9a-f]+(_[0-9a-f]+)*/i', lambda _, x: 
 
 
 class _CompileInstruction(Transformer):
-    def __init__(self, context):
+    def __init__(self, context, line):
         super().__init__()
         self.context = context
+        self.line = line
 
     def __default__(self, data, children, meta):
+        if data.endswith('_raw'):
+            return self.line[meta.start_pos:meta.end_pos]
         assert '__' in data, (data, children)
         ext, _, sid = data.partition('__')
         ext = available_extensions[ext]
@@ -176,6 +179,18 @@ class InstructionOutput(NamedTuple):
 class AssemblyResult:
     output: list[InstructionOutput]
 
+    def to_bytes(self, starting_at=0x8000) -> bytes:
+        out = bytearray()
+        ip = starting_at
+        for i in self.output:
+            if i.start_ip > ip:
+                out += b"\x00" * (i.start_ip-ip)
+                ip += (i.start_ip-ip)
+            elif i.start_ip < ip:
+                raise ValueError("Instruction placed before earlier instruction", i, ip)
+            out += i.binary
+            ip += len(i.binary)
+        return bytes(out)
 
 class Assembler:
     current_parser: Lark
@@ -184,11 +199,13 @@ class Assembler:
         self.context = Context()
         self.context.output = []
         self.context.reload_extensions = self.reload_extensions
+        self.context.macro = self.macro
         core.init(self.context)
 
     def reload_extensions(self):
         grammar_builder = GrammarBuilder()
         grammar_builder.load_grammar(open(Path(__file__).with_name("instruction.lark")).read(), "instruction.lark")
+        existing_syntax_elements = {"instruction"}
         for extension in self.context.enabled_extensions:
             extension: Extension
             for required_modes, syntax in extension.syntax_elements.items():
@@ -196,12 +213,18 @@ class Assembler:
                     continue
                 for s in syntax:
                     alias = f"{s.extension.strid}__{s.strid}"
-                    grammar = f"%extend {s.category}: ({s.grammar}) -> {alias}"
+                    if s.category in existing_syntax_elements:
+                        grammar = f"%extend {s.category}: ({s.grammar}) -> {alias}"
+                    else:
+                        grammar = f"{s.category}: ({s.grammar}) -> {alias}"
+                        grammar += f"\n{s.category}_raw: {s.category}"
+                        existing_syntax_elements.add(s.category)
                     grammar_builder.load_grammar(grammar, alias)
 
         grammar = grammar_builder.build()
         # Maybe lexer=dynamic_complete is worth it, although it might mean a massive reduction in performance
-        self.current_parser = Lark(grammar, parser='earley', lexer='dynamic', ambiguity="explicit", start="instruction")
+        self.current_parser = Lark(grammar, parser='earley', lexer='dynamic', ambiguity="explicit",
+                                   start="instruction", propagate_positions=True)
 
     def handle_instruction(self, line):
         tree = self.current_parser.parse(line)
@@ -213,11 +236,20 @@ class Assembler:
                 print(option)
             raise NotImplementedError("Ambiguity is not implemented")
         inst, = options
-        result = _CompileInstruction(self.context).transform(inst)
+        result = _CompileInstruction(self.context, line).transform(inst)
         if result is not None:
             self.context.output.append(InstructionOutput(self.context.ip, result, line))
             self.context.ip += len(result)
-        print(result)
+
+    def macro(self, instructions: str):
+        old_output, old_ip = self.context.output, self.context.ip
+        self.context.output = new_output = []
+        try:
+            for line in instructions.splitlines(False):
+                self.handle_instruction(line)
+        finally:
+            self.context.output, self.context.ip = old_output, old_ip
+        return b''.join(o.binary for o in new_output)
 
     def single_pass(self, full_text: str):
         for line in full_text.splitlines(False):
