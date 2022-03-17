@@ -138,10 +138,10 @@ def local_label_reference(context, dots, name: str):
     return len(dots), str(name)
 
 
-core.register_syntax('immediate', '/[0-9]+(_[0-9]+)*/', lambda _, x: int(str(x), 10))
-core.register_syntax('immediate', '/0[bB]_?[01]+(_[01]+)*/', lambda _, x: int(x[2:].removeprefix('_'), 2))
-core.register_syntax('immediate', '/0[oO]_?[0-7]+(_[0-7]+)*/', lambda _, x: int(x[2:].removeprefix('_'), 8))
-core.register_syntax('immediate', '/0x_?[0-9a-f]+(_[0-9a-f]+)*/i', lambda _, x: int(x[2:].removeprefix('_'), 16))
+core.register_syntax('immediate', '/[+-]?[0-9]+(_[0-9]+)*/', lambda _, x: int(str(x), 10))
+core.register_syntax('immediate', '/[+-]?0[bB]_?[01]+(_[01]+)*/', lambda _, x: int(x[2:].removeprefix('_'), 2))
+core.register_syntax('immediate', '/[+-]?0[oO]_?[0-7]+(_[0-7]+)*/', lambda _, x: int(x[2:].removeprefix('_'), 8))
+core.register_syntax('immediate', '/[+-]?0x_?[0-9a-f]+(_[0-9a-f]+)*/i', lambda _, x: int(x[2:].removeprefix('_'), 16))
 
 
 class _CompileInstruction(Transformer):
@@ -184,13 +184,14 @@ class AssemblyResult:
         ip = starting_at
         for i in self.output:
             if i.start_ip > ip:
-                out += b"\x00" * (i.start_ip-ip)
-                ip += (i.start_ip-ip)
+                out += b"\x00" * (i.start_ip - ip)
+                ip += (i.start_ip - ip)
             elif i.start_ip < ip:
                 raise ValueError("Instruction placed before earlier instruction", i, ip)
             out += i.binary
             ip += len(i.binary)
         return bytes(out)
+
 
 class Assembler:
     current_parser: Lark
@@ -231,12 +232,21 @@ class Assembler:
         if tree.data == "no_instruction":
             return
         options = CollapseAmbiguities().transform(tree)
-        if len(options) > 1:
-            for option in options:
-                print(option)
-            raise NotImplementedError("Ambiguity is not implemented")
-        inst, = options
-        result = _CompileInstruction(self.context, line).transform(inst)
+        results = []
+        rejections = []
+        for option in options:
+            try:
+                result = _CompileInstruction(self.context, line).transform(option)
+            except _RejectionError as e:
+                rejections.append(e)
+                continue
+            else:
+                results.append(result)
+        if not results:
+            raise NotImplementedError("Everyone rejected", line, rejections)
+        if len(results) > 1:
+            raise NotImplementedError("Prioritization is not implemented", results)
+        result, = results
         if result is not None:
             self.context.output.append(InstructionOutput(self.context.ip, result, line))
             self.context.ip += len(result)
