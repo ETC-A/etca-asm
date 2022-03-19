@@ -4,12 +4,13 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
+from pprint import pprint
 from types import SimpleNamespace
 from typing import Callable, TYPE_CHECKING, NamedTuple
 
 import lark.load_grammar
 from frozendict import frozendict
-from lark import Lark, Transformer
+from lark import Lark, Transformer, GrammarError
 from lark.load_grammar import GrammarBuilder
 from lark.visitors import CollapseAmbiguities
 
@@ -138,6 +139,17 @@ def local_label_reference(context, dots, name: str):
     return len(dots), str(name)
 
 
+@core.inst(r'".extension" /\w+/ ( "," /\w+/)*')
+def enable_extension(context, *names: str):
+    print(names)
+    for name in names:
+        reject(name not in available_extensions)
+        ext = available_extensions[name]
+        if ext not in context.enabled_extensions:
+            context.enabled_extensions.append(ext)
+    context.reload_extensions()
+
+
 core.register_syntax('immediate', '/[+-]?[0-9]+(_[0-9]+)*/', lambda _, x: int(str(x), 10))
 core.register_syntax('immediate', '/[+-]?0[bB]_?[01]+(_[01]+)*/', lambda _, x: int(x[2:].removeprefix('_'), 2))
 core.register_syntax('immediate', '/[+-]?0[oO]_?[0-7]+(_[0-7]+)*/', lambda _, x: int(x[2:].removeprefix('_'), 8))
@@ -207,6 +219,7 @@ class Assembler:
         grammar_builder = GrammarBuilder()
         grammar_builder.load_grammar(open(Path(__file__).with_name("instruction.lark")).read(), "instruction.lark")
         existing_syntax_elements = {"instruction"}
+        full_grammar = ""
         for extension in self.context.enabled_extensions:
             extension: Extension
             for required_modes, syntax in extension.syntax_elements.items():
@@ -220,9 +233,14 @@ class Assembler:
                         grammar = f"{s.category}: ({s.grammar}) -> {alias}"
                         grammar += f"\n{s.category}_raw: {s.category}"
                         existing_syntax_elements.add(s.category)
+                    full_grammar += grammar + "\n"
                     grammar_builder.load_grammar(grammar, alias)
 
-        grammar = grammar_builder.build()
+        print(full_grammar)
+        try:
+            grammar = grammar_builder.build()
+        except GrammarError as e:
+            raise e
         # Maybe lexer=dynamic_complete is worth it, although it might mean a massive reduction in performance
         self.current_parser = Lark(grammar, parser='earley', lexer='dynamic', ambiguity="explicit",
                                    start="instruction", propagate_positions=True)
@@ -277,3 +295,14 @@ class Assembler:
             if old == (self.context.missing_labels, self.context.changed_labels):
                 raise ValueError(f"Stuck without further progress, still missing labels {self.context.missing_labels}")
         return AssemblyResult(self.context.output)
+
+
+def resolve_register_size(context, *sizes: str | None):
+    sizes = set(sizes)
+    sizes.difference_update({None})
+    if len(sizes) == 0:
+        return context.default_size
+    elif len(sizes) == 1:
+        return next(iter(sizes))
+    else:
+        reject(True, f"Conflicting register sizes: {sizes}")

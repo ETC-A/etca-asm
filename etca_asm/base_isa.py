@@ -1,13 +1,16 @@
 from bitarray import bitarray
 from bitarray.util import int2ba
 
-from etca_asm.core import Extension, reject
+from etca_asm.core import Extension, reject, resolve_register_size
 
 base = Extension(None, "base", "Base Instruction Set", True)
 
-# @base.set_init
-# def base_init(context):
-#     context.modes
+
+@base.set_init
+def base_init(context):
+    context.__dict__.setdefault('default_size', 'x')
+    context.__dict__.setdefault('register_sizes', {})['x'] = 1
+
 
 INSTRUCTIONS = {
     "add": 0x0,
@@ -48,6 +51,18 @@ def build(*parts: tuple[int, int]):
     return data.tobytes()
 
 
+def validate_registers(context, *registers, inst_size: str = None, register_range=range(8)) -> \
+        tuple[str, tuple[int, ...]]:
+    out_registers = []
+    out_sizes = []
+    for rs, r in registers:
+        reject(r not in register_range, f"Register {r!r} out of valid range ({register_range})")
+        out_registers.append(r)
+        out_sizes.append(rs)
+    size = resolve_register_size(context, inst_size, *out_sizes)
+    return size, tuple(out_registers)
+
+
 # TODO: This should be something like "directive", not an "instruction"
 @base.inst(f'".syntax" /(no)?prefix/')
 def syntax_prefix(context, new_value):
@@ -65,72 +80,85 @@ def strict(context):
     context.reload_extensions()
 
 
-@base.reg(f"/%rx[0-7]/", strict=True, prefix=True)
-@base.reg(f"/%rx?[0-7]/", strict=False, prefix=True)
-@base.reg(f"/rx[0-7]/", strict=True, prefix=False)
-@base.reg(f"/rx?[0-7]/", strict=False, prefix=False)
-def base_registers(context, reg: str):
-    return int(reg[-1])
+# We need a negative lookbehind here to prevent "%r 7" from being valid.
+@base.reg(fr'"%r" size_infix /(?!<\s)[0-9]+/', prefix=True)
+@base.reg(fr'"r" size_infix /(?!<\s)[0-9]+/', prefix=False)
+def base_registers(context, size, reg: str):
+    return size, int(reg)
 
 
-@base.inst(f'/{oneof(*INSTRUCTIONS)}x/ register "," register', strict=True)
-@base.inst(f'/{oneof(*INSTRUCTIONS)}x?/ register "," register', strict=False)
-def base_computations_2reg(context, inst: str, a: int, b: int):
-    reject(not isinstance(a, int) or not (0 <= a < 8), a)
-    reject(not isinstance(b, int) or not (0 <= b < 8), b)
-    inst = inst.removesuffix('x')
+@base.register_syntax("size_postfix", r"/(?!<\s)x/")
+@base.register_syntax("size_postfix", r"", strict=False)
+def size_postfix_x(context, x=None):
+    return 'x' if x else None
+
+
+@base.register_syntax("size_infix", r"/(?!<\s)x(?!\s)/")
+@base.register_syntax("size_infix", r"", strict=False)
+def size_infix_x(context, x=None):
+    return 'x' if x else None
+
+
+@base.register_syntax("size_prefix", r"/x(?!\s)/")
+@base.register_syntax("size_prefix", r"", strict=False)
+def size_prefix_x(context, x=None):
+    return 'x' if x else None
+
+
+@base.inst(f'/{oneof(*INSTRUCTIONS)}/ size_postfix register "," register')
+def base_computations_2reg(context, inst: str, inst_size, a: tuple[int | None, int], b: tuple[int | None, int]):
+    size, (a, b) = validate_registers(context, a, b, inst_size=inst_size)
+
     op = INSTRUCTIONS[inst]
-    if op >= 12:
-        reject()
-    return build((0b0001, 4), (op, 4), (a, 3), (b, 3), (0, 2))
+    reject(op >= 12, f"Opcode {op} doesn't have a 2 register form")
+    return build((0b00, 2), (context.register_sizes[size], 2), (op, 4), (a, 3), (b, 3), (0, 2))
 
 
-@base.inst(f'/{oneof(*INSTRUCTIONS)}x/ register "," immediate', strict=True)
-@base.inst(f'/{oneof(*INSTRUCTIONS)}x?/ register "," immediate', strict=False)
-def base_computations_imm(context, inst: str, reg: int, imm: int):
-    inst = inst.removesuffix('x')
+@base.inst(f'/{oneof(*INSTRUCTIONS)}/ size_postfix register "," immediate')
+def base_computations_imm(context, inst: str, inst_size: str | None, reg: tuple[str | None, int], imm: int):
+    size, (a,) = validate_registers(context, reg, inst_size=inst_size)
+
     op = INSTRUCTIONS[inst]
-    reject(not isinstance(reg, int) or not (0 <= reg < 8))
+
     if op < 12:
-        reject(not isinstance(imm, int) or not (-16 <= imm < 16))
+        reject(not isinstance(imm, int) or not (-16 <= imm < 16),
+               f"Invalid immediate for base {imm} with opcode {inst}")
     else:
-        reject(not isinstance(imm, int) or not (0 <= imm < 32), imm)
-    return build((0b0101, 4), (op, 4), (reg, 3), (imm & 0x1F, 5))
+        reject(not isinstance(imm, int) or not (0 <= imm < 32), f"Invalid immediate for base {imm} with opcode {inst}")
+
+    return build((0b01, 2), (context.register_sizes[size], 2), (op, 4), (a, 3), (imm & 0x1F, 5))
 
 
-@base.inst('/inpx/ register "," immediate', strict=True)
-@base.inst('/inpx?/ register "," immediate', strict=False)
-def base_inp(context, _, reg, port):
-    reject(not isinstance(reg, int) or not (0 <= reg < 8))
-    reject(not isinstance(port, int) or not (0 <= port < 16))
-    return build((0b0101, 4), (0xE, 4), (reg, 3), (port, 4), (1, 1))
+@base.inst('"inp" size_postfix register "," immediate')
+def base_inp(context, inst_size, reg, port):
+    size, (a,) = validate_registers(context, reg, inst_size=inst_size)
+    reject(not isinstance(port, int) or not (0 <= port < 16), f"Invalid IO port for base {port}")
+    return build((0b0101, 4), (0xE, 4), (a, 3), (port, 4), (1, 1))
 
 
-@base.inst('/outx/ register "," immediate', strict=True)
-@base.inst('/outx?/ register "," immediate', strict=False)
-def base_out(context, _, reg, port):
-    reject(not isinstance(reg, int) or not (0 <= reg < 8))
-    reject(not isinstance(port, int) or not (0 <= port < 16))
-    return build((0b0101, 4), (0xF, 4), (reg, 3), (port, 4), (1, 1))
+@base.inst('"out" size_postfix register "," immediate', strict=False)
+def base_out(context, inst_size, reg, port):
+    size, (a,) = validate_registers(context, reg, inst_size=inst_size)
+    reject(not isinstance(port, int) or not (0 <= port < 16), f"Invalid IO port for base {port}")
+    return build((0b0101, 4), (0xF, 4), (a, 3), (port, 4), (1, 1))
 
 
-@base.inst('/mfcrx/ register "," immediate', strict=True)
-@base.inst('/mfcrx?/ register "," immediate', strict=False)
-def base_mfcr(context, _, reg, port):
-    reject(not isinstance(reg, int) or not (0 <= reg < 8))
-    reject(not isinstance(port, int) or not (0 <= port < 16))
-    return build((0b0101, 4), (0xE, 4), (reg, 3), (port, 4), (0, 1))
+@base.inst('"mfcr" size_postfix register "," immediate')
+def base_mfcr(context, inst_size, reg, port):
+    size, (a,) = validate_registers(context, reg, inst_size=inst_size)
+    reject(not isinstance(port, int) or not (0 <= port < 16), f"Invalid control register for base {port}")
+    return build((0b0101, 4), (0xE, 4), (a, 3), (port, 4), (0, 1))
 
 
-@base.inst('/mtcrx/ register "," immediate', strict=True)
-@base.inst('/mtcrx?/ register "," immediate', strict=False)
-def base_mtcr(context, _, reg, port):
-    reject(not isinstance(reg, int) or not (0 <= reg < 8))
-    reject(not isinstance(port, int) or not (0 <= port < 16))
-    return build((0b0101, 4), (0xF, 4), (reg, 3), (port, 4), (0, 1))
+@base.inst('"mtcr" size_postfix register "," immediate')
+def base_mtcr(context, inst_size, reg, port):
+    size, (a,) = validate_registers(context, reg, inst_size=inst_size)
+    reject(not isinstance(port, int) or not (0 <= port < 16), f"Invalid control register for base {port}")
+    return build((0b0101, 4), (0xF, 4), (a, 3), (port, 4), (0, 1))
 
 
-@base.register_syntax("control_register", "/cr[0-9]+/")
+@base.register_syntax("control_register", "/cr[0-9]+/", prefix=False)
+@base.register_syntax("control_register", "/%cr[0-9]+/", prefix=True)
 def cr_n(context, cr):
     return int(cr.removeprefix('cr'))
 
@@ -141,37 +169,34 @@ NAMED_CRS = {
 }
 
 
-@base.register_syntax("control_register", f"/{oneof(*NAMED_CRS)}/")
+@base.register_syntax("control_register", f"/{oneof(*NAMED_CRS)}/", prefix=False)
+@base.register_syntax("control_register", f"/%{oneof(*NAMED_CRS)}/", prefix=True)
 def named_cr(context, name):
     return NAMED_CRS[name]
 
 
-@base.inst('/movx?/ register_raw "," control_register', strict=False)
-@base.inst('/movx/ register_raw "," control_register', strict=True)
+@base.inst('"mov" size_postfix "," control_register')
 def mov_from_cr(context, _, reg, cr):
     return context.macro(f"""
         mfcrx {reg}, {cr}
     """)
 
 
-@base.inst('/movx?/ control_register "," register_raw', strict=False)
-@base.inst('/movx/ control_register "," register_raw', strict=True)
+@base.inst('"mov" size_postfix control_register "," register_raw')
 def mov_to_cr(context, _, cr, reg):
     return context.macro(f"""
         mtcrx {reg}, {cr}
     """)
 
 
-@base.inst('/movx?/ register_raw "," "[" (register_raw|immediate_raw) "]"', strict=False)
-@base.inst('/movx/ register_raw "," "[" (register_raw|immediate_raw) "]"', strict=True)
+@base.inst('"mov" size_postfix register_raw "," "[" (register_raw|immediate_raw) "]"')
 def mov_from_mem(context, _, reg, arg):
     return context.macro(f"""
         ld {reg}, {arg}
     """)
 
 
-@base.inst('/movx?/ "[" register_raw "]" "," (register_raw|immediate_raw)', strict=False)
-@base.inst('/movx/ "[" register_raw "]" "," (register_raw|immediate_raw)', strict=True)
+@base.inst('"mov" size_postfix "[" register_raw "]" "," (register_raw|immediate_raw)')
 def mov_to_mem(context, _, reg, arg):
     return context.macro(f"""
         st {reg}, {arg}
