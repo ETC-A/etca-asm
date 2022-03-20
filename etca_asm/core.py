@@ -4,7 +4,6 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from pprint import pprint
 from types import SimpleNamespace
 from typing import Callable, TYPE_CHECKING, NamedTuple
 
@@ -141,7 +140,7 @@ def local_label_reference(context, dots, name: str):
 
 @core.inst(r'".extension" /\w+/ ( "," /\w+/)*')
 def enable_extension(context, *names: str):
-    print(names)
+    # print(names)
     for name in names:
         reject(name not in available_extensions)
         ext = available_extensions[name]
@@ -236,7 +235,7 @@ class Assembler:
                     full_grammar += grammar + "\n"
                     grammar_builder.load_grammar(grammar, alias)
 
-        print(full_grammar)
+        # print(full_grammar)
         try:
             grammar = grammar_builder.build()
         except GrammarError as e:
