@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import partial
@@ -235,7 +236,7 @@ class Assembler:
                     full_grammar += grammar + "\n"
                     grammar_builder.load_grammar(grammar, alias)
 
-        # print(full_grammar)
+        print(full_grammar)
         try:
             grammar = grammar_builder.build()
         except GrammarError as e:
@@ -280,16 +281,19 @@ class Assembler:
 
     def single_pass(self, full_text: str):
         for line in full_text.splitlines(False):
+            print(f"Starting with line, {line!r}")
             self.handle_instruction(line)
+            print(f"Done with line, {line!r}")
 
     def n_pass(self, full_text) -> AssemblyResult:
+        start_context = copy.deepcopy(self.context)
         self.single_pass(full_text)
         while self.context.missing_labels or self.context.changed_labels:
             old = self.context.missing_labels, self.context.changed_labels
             old_labels = self.context.labels.copy()
-            core.init(self.context)
+            self.context = copy.deepcopy(start_context)
             self.context.labels = old_labels
-            self.context.output = []
+            self.reload_extensions()
             self.single_pass(full_text)
             if old == (self.context.missing_labels, self.context.changed_labels):
                 raise ValueError(f"Stuck without further progress, still missing labels {self.context.missing_labels}")
