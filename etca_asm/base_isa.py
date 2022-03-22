@@ -160,7 +160,7 @@ def base_mtcr(context, inst_size, reg, port):
 @base.register_syntax("control_register", "/cr[0-9]+/", prefix=False)
 @base.register_syntax("control_register", "/%cr[0-9]+/", prefix=True)
 def cr_n(context, cr):
-    return int(cr.removeprefix('cr'))
+    return int(cr.removeprefix('%').removeprefix('cr'))
 
 
 NAMED_CRS = {
@@ -172,10 +172,10 @@ NAMED_CRS = {
 @base.register_syntax("control_register", f"/{oneof(*NAMED_CRS)}/", prefix=False)
 @base.register_syntax("control_register", f"/%{oneof(*NAMED_CRS)}/", prefix=True)
 def named_cr(context, name):
-    return NAMED_CRS[name]
+    return NAMED_CRS[name.removeprefix('%')]
 
 
-@base.inst('"mov" size_postfix "," control_register')
+@base.inst('"mov" size_postfix register_raw "," control_register')
 def mov_from_cr(context, _, reg, cr):
     return context.macro(f"""
         mfcrx {reg}, {cr}

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.10
 
 import etca_asm.core as core
 import etca_asm.base_isa as base
