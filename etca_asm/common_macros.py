@@ -15,19 +15,19 @@ def mov_large_immediate(context, _, reg, imm):
     imm = imm & 0xFFFF
     if imm < 2 ** 9 or imm > 2 ** 16 - 2 ** 9:
         return context.macro(f"""
-            mov {reg}, {sign_extend((imm & 0b11_1110_0000) >> 5, 5)}
-            slo {reg}, {(imm & 0b00_0001_1111) >> 0}
+            movx {reg}, {sign_extend((imm & 0b11_1110_0000) >> 5, 5)}
+            slox {reg}, {(imm & 0b00_0001_1111) >> 0}
         """)
     elif bool(imm & 0x8000) != bool(imm & 0x4000):
         return context.macro(f"""
-            mov {reg}, {(imm & 0b1000_0000_0000_0000) >> 15}
-            slo {reg}, {(imm & 0b0111_1100_0000_0000) >> 10}
-            slo {reg}, {(imm & 0b0000_0011_1110_0000) >> 5}
-            slo {reg}, {(imm & 0b0000_0000_0001_1111) >> 0}
+            movx {reg}, {(imm & 0b1000_0000_0000_0000) >> 15}
+            slox {reg}, {(imm & 0b0111_1100_0000_0000) >> 10}
+            slox {reg}, {(imm & 0b0000_0011_1110_0000) >> 5}
+            slox {reg}, {(imm & 0b0000_0000_0001_1111) >> 0}
         """)
     else:
         return context.macro(f"""
-            mov {reg}, {sign_extend((imm & 0b0111_1100_0000_0000) >> 10, 5)}
-            slo {reg}, {(imm & 0b0000_0011_1110_0000) >> 5}
-            slo {reg}, {(imm & 0b0000_0000_0001_1111) >> 0}
+            movx {reg}, {sign_extend((imm & 0b0111_1100_0000_0000) >> 10, 5)}
+            slox {reg}, {(imm & 0b0000_0011_1110_0000) >> 5}
+            slox {reg}, {(imm & 0b0000_0000_0001_1111) >> 0}
         """)

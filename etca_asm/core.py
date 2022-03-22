@@ -212,14 +212,14 @@ class Assembler:
 
     def __init__(self, default_modes=None, available_extensions=None, logger: logging.Logger = None):
         self.context = Context()
+        # Maybe these should be different loggers ?
         self.logger = self.context.logger = logger or logging.getLogger(__name__)
         self.context.available_extensions = available_extensions or set(potential_extensions)
         self.context.output = []
         self.context.reload_extensions = self.reload_extensions
         self.context.macro = self.macro
         core.init(self.context)
-        self.context.modes = default_modes
-        # Maybe these should be different loggers ?
+        self.context.modes = default_modes or set()
 
     def reload_extensions(self):
         grammar_builder = GrammarBuilder()
