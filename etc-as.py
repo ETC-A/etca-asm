@@ -3,10 +3,12 @@
 import etca_asm.core as core
 import etca_asm.base_isa as base
 import etca_asm.common_macros
+import etca_asm.extensions as extensions
 import sys
 
 def assemble(in_file: str, out_file: str):
   global mformat,modes
+  extensions.import_all_extensions()
 
   worker=core.Assembler()
   worker.context.modes=modes

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import partial
@@ -29,7 +30,7 @@ class SyntaxElement:
     required_markers: frozendict[str, bool]
 
 
-available_extensions: dict[str, Extension] = {}
+potential_extensions: dict[str, Extension] = {}
 
 core: Extension
 
@@ -46,8 +47,8 @@ class Extension:
     syntax_elements_by_id: dict[str, SyntaxElement] = field(default_factory=dict)
 
     def __post_init__(self):
-        assert self.name not in available_extensions
-        available_extensions[self.strid] = self
+        assert self.name not in potential_extensions
+        potential_extensions[self.strid] = self
 
     def register_syntax(self, category: str, grammar, func=None, /, **kwargs: bool):
         def dec(f):
@@ -93,7 +94,8 @@ def _resolve_label(context, name: tuple[int, str]) -> int | None:
 
 @core.set_init
 def core_init(context):
-    context.enabled_extensions = [e for e in available_extensions.values() if e.default_on]
+    context.enabled_extensions = [e for a in context.available_extensions
+                                  if (e := potential_extensions[a]).default_on]
     context.modes = set()
     context.ip = 0x8000
     context.labels = {}
@@ -101,7 +103,7 @@ def core_init(context):
     context.missing_labels = set()
     context.changed_labels = set()
     context.resolve_label = partial(_resolve_label, context)
-    for e in available_extensions.values():
+    for e in potential_extensions.values():
         if e.init is not None and e is not core:
             e.init(context)
     context.reload_extensions()
@@ -110,8 +112,8 @@ def core_init(context):
 @core.inst('NAME ":"')
 def global_label(context, name: str):
     context.last_labels = [str(name)]
-    if context.labels.get(name, None) != context.ip:
-        context.changed_labels.add(name)
+    if context.labels.get(name, context.ip) != context.ip:
+        context.changed_labels.add(name)  # Don't mark completely new labels as changed
     context.labels[name] = context.ip
     return b''
 
@@ -141,10 +143,10 @@ def local_label_reference(context, dots, name: str):
 
 @core.inst(r'".extension" /\w+/ ( "," /\w+/)*')
 def enable_extension(context, *names: str):
-    # print(names)
     for name in names:
-        reject(name not in available_extensions)
-        ext = available_extensions[name]
+        reject(name not in context.available_extensions,
+               f"Unknown extension {name!r}, expected one of {list(context.available_extensions)}")
+        ext = potential_extensions[name]
         if ext not in context.enabled_extensions:
             context.enabled_extensions.append(ext)
     context.reload_extensions()
@@ -167,7 +169,7 @@ class _CompileInstruction(Transformer):
             return self.line[meta.start_pos:meta.end_pos]
         assert '__' in data, (data, children)
         ext, _, sid = data.partition('__')
-        ext = available_extensions[ext]
+        ext = potential_extensions[ext]
         se = ext.syntax_elements_by_id[sid]
         return se.func(self.context, *children)
 
@@ -208,12 +210,16 @@ class AssemblyResult:
 class Assembler:
     current_parser: Lark
 
-    def __init__(self):
+    def __init__(self, default_modes=None, available_extensions=None, logger: logging.Logger = None):
         self.context = Context()
+        self.logger = self.context.logger = logger or logging.getLogger(__name__)
+        self.context.available_extensions = available_extensions or set(potential_extensions)
         self.context.output = []
         self.context.reload_extensions = self.reload_extensions
         self.context.macro = self.macro
         core.init(self.context)
+        self.context.modes = default_modes
+        # Maybe these should be different loggers ?
 
     def reload_extensions(self):
         grammar_builder = GrammarBuilder()
@@ -236,7 +242,7 @@ class Assembler:
                     full_grammar += grammar + "\n"
                     grammar_builder.load_grammar(grammar, alias)
 
-        print(full_grammar)
+        self.logger.debug(full_grammar)
         try:
             grammar = grammar_builder.build()
         except GrammarError as e:
@@ -281,9 +287,9 @@ class Assembler:
 
     def single_pass(self, full_text: str):
         for line in full_text.splitlines(False):
-            print(f"Starting with line, {line!r}")
+            self.logger.debug(f"Starting with line, {line!r}")
             self.handle_instruction(line)
-            print(f"Done with line, {line!r}")
+            self.logger.debug(f"Done with line, {line!r}")
 
     def n_pass(self, full_text) -> AssemblyResult:
         start_context = copy.deepcopy(self.context)
