@@ -5,6 +5,6 @@ NAME: /\w+/
 _NOMATCH: /(?!_)_/
 
 %ignore WS_INLINE
-%ignore /;[^\n]+/
+%ignore /;[^\n]*/
 %import common.WS_INLINE
 %import common.NEWLINE -> _NEWLINE
