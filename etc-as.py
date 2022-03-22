@@ -2,14 +2,9 @@
 
 import etca_asm.core as core
 import etca_asm.base_isa as base
-import etca_asm.byte_operations
-import etca_asm.dword_operations
-import etca_asm.qword_operations
 import etca_asm.common_macros
 import etca_asm.extensions as extensions
 import sys
-
-print(core.available_extensions.keys())
 
 def assemble(in_file: str, out_file: str):
   global mformat,modes
