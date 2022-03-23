@@ -40,6 +40,7 @@ INSTRUCTIONS = {
 
 
 def oneof(*names):
+    names=sorted(names, key=len, reverse=True)
     return f"({'|'.join(names)})"
 
 
@@ -217,12 +218,12 @@ def mov_to_mem(context, _, reg, arg):
 
 
 JUMP_NAMES = {
-    "z": 0,
-    "nz": 1,
+    "z": 0, "e": 0,
+    "nz": 1, "ne": 1,
     "n": 2,
     "nn": 3,
-    "c": 4,
-    "nc": 5,
+    "c": 4, "b": 4,
+    "nc": 5, "ae": 5,
     "v": 6,
     "nv": 7,
     "be": 8,
@@ -233,7 +234,6 @@ JUMP_NAMES = {
     "g": 13,
     "mp": 14,
 }
-
 
 @base.inst(f'/j{oneof(*JUMP_NAMES)}/ label')
 def base_jumps(context, inst: str, label: str):

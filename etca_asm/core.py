@@ -124,7 +124,7 @@ def local_label(context, dots: str, name: str):
     while len(context.last_labels) < dot_count:
         context.last_labels.append('')
     context.last_labels[dot_count:] = [name]
-    full_name = '.'.join((*context.last_labels, name))
+    full_name = '.'.join((*context.last_labels[:dot_count], name))
     if context.labels.get(full_name, None) != context.ip:
         context.changed_labels.add(full_name)
     context.labels[full_name] = context.ip
@@ -287,9 +287,9 @@ class Assembler:
 
     def single_pass(self, full_text: str):
         for line in full_text.splitlines(False):
-            self.logger.debug(f"Starting with line, {line!r}")
+            self.logger.debug(f"Starting with line: {line!r}")
             self.handle_instruction(line)
-            self.logger.debug(f"Done with line, {line!r}")
+            self.logger.debug(f"Done with line    : {line!r}")
 
     def n_pass(self, full_text) -> AssemblyResult:
         start_context = copy.deepcopy(self.context)
