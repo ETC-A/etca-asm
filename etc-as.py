@@ -46,17 +46,22 @@ def output_as_tc_64(res, out_file):
     ct = 0
     bs = b''
     waiting = []
+    def do_print():
+      nonlocal ct,bs,waiting
+      for i in waiting:
+        f.write(f"# {i.raw_line}\n")
+      f.write(f"0x{int.from_bytes(bs,'little'):0{2*ct}x}\n")
+      ct = 0
+      bs = b''
+      waiting = []
     for instr in res.output:
       ct += len(instr.binary)
       waiting.append(instr)
       bs += instr.binary
       if ct == 8:
-        for i in waiting:
-          f.write(f"# {i.raw_line}\n")
-        f.write(f"0x{int.from_bytes(bs,'little'):0{16}x}\n")
-        ct = 0
-        bs = b''
-        waiting = []
+        do_print()
+    if len(bs) > 0:
+      do_print()
 
 def output_as_annotated(res, out_file):
   with open(out_file,'w') as f:
