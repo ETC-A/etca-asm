@@ -4,11 +4,14 @@ import etca_asm.core as core
 import etca_asm.base_isa as base
 import etca_asm.common_macros
 import etca_asm.extensions as extensions
+import logging
 import sys
 
 def assemble(in_file: str, out_file: str):
-  global mformat,modes
+  global mformat,modes,verbosity
   extensions.import_all_extensions()
+  if verbosity >= 5:
+    logging.basicConfig(level='DEBUG')
 
   worker=core.Assembler()
   worker.context.modes=modes
@@ -21,6 +24,10 @@ def assemble(in_file: str, out_file: str):
     output_as_binary(res, out_file)
   elif mformat=='annotated':
     output_as_annotated(res, out_file)
+  elif mformat=='tc':
+    output_as_tc_8(res, out_file)
+  elif mformat=='tc-64':
+    output_as_tc_64(res, out_file)
   else:
     raise ValueError(f'impossible mformat `{mformat}\'')
     
@@ -28,11 +35,34 @@ def output_as_binary(res, out_file):
   with open(out_file,'bw') as f:
     f.write(res.to_bytes())
 
+def output_as_tc_8(res, out_file):
+  with open(out_file,'w') as f:
+    for instr in res.output:
+      encoding = ' '.join(f'0x{b:02x}' for b in instr.binary)
+      f.write(f"{encoding:10} # {instr.raw_line}\n")
+
+def output_as_tc_64(res, out_file):
+  with open(out_file,'w') as f:
+    ct = 0
+    bs = b''
+    waiting = []
+    for instr in res.output:
+      ct += len(instr.binary)
+      waiting.append(instr)
+      bs += instr.binary
+      if ct == 8:
+        for i in waiting:
+          f.write(f"# {i.raw_line}\n")
+        f.write(f"0x{int.from_bytes(bs,'little'):0{16}x}\n")
+        ct = 0
+        bs = b''
+        waiting = []
+
 def output_as_annotated(res, out_file):
   with open(out_file,'w') as f:
     for instr in res.output:
       encoding = ' '.join('{:02x}'.format(b) for b in instr.binary)
-      f.write(f"{instr.start_ip:#0{4}x}: {encoding:30}# {instr.raw_line}\n")
+      f.write(f"0x{instr.start_ip:04x}: {encoding:30}# {instr.raw_line}\n")
 
 args = sys.argv
 
@@ -50,8 +80,12 @@ Options:
   -v                      Print progress information.
   -help  --help           Display this help message and exit.
   -o OBJFILE              Name the object file (default: a.out)
-  -mformat=[binary|annotated] (default: annotated)
+  -mformat=[binary|tc|tc-64|annotated] (default: annotated)
                           Control the assembled output format.
+                          The tc and tc-64 formats are aimed at the game
+                          "Turing Complete" and are deprecated-on-release.
+                          They will be removed when the game no longer needs
+                          their help.
   -mnaked-reg             Don't require `%' prefix requirement for registers
   -mstrict                Be strict about various things, including requiring
                           sizes attached to registers and instructions which
@@ -87,7 +121,7 @@ while len(args) > 1:
     elif a == 'naked-reg':                 modes.remove('prefix') ; shift()
     elif a.startswith('format='):
       a=a[7:]
-      if a not in ['binary', 'annotated']: raise ValueError(f"unknown format: {a}")
+      if a not in ['binary', 'tc', 'tc-64', 'annotated']: raise ValueError(f"unknown format: {a}")
       mformat=a                                                   ; shift()
     else: unhandled += [a]                                        ; shift()
   elif a[0] != '-':                        asm_file=a             ; shift()
