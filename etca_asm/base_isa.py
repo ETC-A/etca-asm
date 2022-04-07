@@ -34,8 +34,8 @@ INSTRUCTIONS = {
 
     "slo": 0xC,
 
-    "cr_read": 0xE,
-    "cr_write": 0xF,
+    "mfcr": 0xE,
+    "mtcr": 0xF,
 }
 
 
@@ -141,20 +141,6 @@ def base_computations_imm(context, inst: str, inst_size: str | None, reg: tuple[
         reject(not isinstance(imm, int) or not (0 <= imm < 32), f"Invalid immediate for base {imm} with opcode {inst}")
 
     return build((0b01, 2), (context.register_sizes[size], 2), (op, 4), (a, 3), (imm & 0x1F, 5))
-
-
-@base.inst('"mfcr" size_postfix register "," immediate')
-def base_mfcr(context, inst_size, reg, cr):
-    size, (a,) = validate_registers(context, reg, inst_size=inst_size)
-    reject(not isinstance(cr, int) or not (0 <= cr < 32), f"Invalid control register for base {cr}")
-    return build((0b0101, 4), (0xE, 4), (a, 3), (cr, 5))
-
-
-@base.inst('"mtcr" size_postfix register "," immediate')
-def base_mtcr(context, inst_size, reg, cr):
-    size, (a,) = validate_registers(context, reg, inst_size=inst_size)
-    reject(not isinstance(cr, int) or not (0 <= cr < 32), f"Invalid control register for base {cr}")
-    return build((0b0101, 4), (0xF, 4), (a, 3), (cr, 5))
 
 
 @base.register_syntax("control_register", "/cr[0-9]+/", prefix=False)
