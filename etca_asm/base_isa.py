@@ -34,8 +34,8 @@ INSTRUCTIONS = {
 
     "slo": 0xC,
 
-    "port_read": 0xE,
-    "port_write": 0xF,
+    "cr_read": 0xE,
+    "cr_write": 0xF,
 }
 
 
@@ -143,32 +143,18 @@ def base_computations_imm(context, inst: str, inst_size: str | None, reg: tuple[
     return build((0b01, 2), (context.register_sizes[size], 2), (op, 4), (a, 3), (imm & 0x1F, 5))
 
 
-@base.inst('"inp" size_postfix register "," immediate')
-def base_inp(context, inst_size, reg, port):
-    size, (a,) = validate_registers(context, reg, inst_size=inst_size)
-    reject(not isinstance(port, int) or not (0 <= port < 16), f"Invalid IO port for base {port}")
-    return build((0b0101, 4), (0xE, 4), (a, 3), (port, 4), (1, 1))
-
-
-@base.inst('"out" size_postfix register "," immediate', strict=False)
-def base_out(context, inst_size, reg, port):
-    size, (a,) = validate_registers(context, reg, inst_size=inst_size)
-    reject(not isinstance(port, int) or not (0 <= port < 16), f"Invalid IO port for base {port}")
-    return build((0b0101, 4), (0xF, 4), (a, 3), (port, 4), (1, 1))
-
-
 @base.inst('"mfcr" size_postfix register "," immediate')
-def base_mfcr(context, inst_size, reg, port):
+def base_mfcr(context, inst_size, reg, cr):
     size, (a,) = validate_registers(context, reg, inst_size=inst_size)
-    reject(not isinstance(port, int) or not (0 <= port < 16), f"Invalid control register for base {port}")
-    return build((0b0101, 4), (0xE, 4), (a, 3), (port, 4), (0, 1))
+    reject(not isinstance(cr, int) or not (0 <= cr < 32), f"Invalid control register for base {cr}")
+    return build((0b0101, 4), (0xE, 4), (a, 3), (cr, 5))
 
 
 @base.inst('"mtcr" size_postfix register "," immediate')
-def base_mtcr(context, inst_size, reg, port):
+def base_mtcr(context, inst_size, reg, cr):
     size, (a,) = validate_registers(context, reg, inst_size=inst_size)
-    reject(not isinstance(port, int) or not (0 <= port < 16), f"Invalid control register for base {port}")
-    return build((0b0101, 4), (0xF, 4), (a, 3), (port, 4), (0, 1))
+    reject(not isinstance(cr, int) or not (0 <= cr < 32), f"Invalid control register for base {cr}")
+    return build((0b0101, 4), (0xF, 4), (a, 3), (cr, 5))
 
 
 @base.register_syntax("control_register", "/cr[0-9]+/", prefix=False)
@@ -210,7 +196,7 @@ def mov_from_mem(context, _, reg, arg):
     """)
 
 
-@base.inst('"mov" size_postfix "[" register_raw "]" "," (register_raw|immediate_raw)')
+@base.inst('"mov" size_postfix "[" (register_raw|immediate_raw) "]" "," register_raw')
 def mov_to_mem(context, _, reg, arg):
     return context.macro(f"""
         st {reg}, {arg}
@@ -228,10 +214,10 @@ JUMP_NAMES = {
     "nv": 7,
     "be": 8,
     "a": 9,
-    "l": 10,
+    "l": 10, "lt": 10,
     "ge": 11,
     "le": 12,
-    "g": 13,
+    "g": 13, "gt": 13,
     "mp": 14,
 }
 
