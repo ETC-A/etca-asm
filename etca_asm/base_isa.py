@@ -176,16 +176,16 @@ def mov_to_cr(context, _, cr, reg):
 
 
 @base.inst('"mov" size_postfix register_raw "," "[" (register_raw|immediate_raw) "]"')
-def mov_from_mem(context, _, reg, arg):
+def mov_from_mem(context, _, dest, source):
     return context.macro(f"""
-        ld {reg}, {arg}
+        ld {dest}, {source}
     """)
 
 
 @base.inst('"mov" size_postfix "[" (register_raw|immediate_raw) "]" "," register_raw')
-def mov_to_mem(context, _, reg, arg):
+def mov_to_mem(context, _, dest, source):
     return context.macro(f"""
-        st {reg}, {arg}
+        st {source}, {dest}
     """)
 
 
