@@ -185,7 +185,7 @@ def mov_from_mem(context, size, dest, source):
 @base.inst('"mov" size_postfix "[" (register_raw|immediate_raw) "]" "," register_raw')
 def mov_to_mem(context, size, dest, source):
     return context.macro(f"""
-        st{size} {dest}, {source}
+        st{size} {source}, {dest}
     """)
 
 
