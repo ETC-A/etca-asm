@@ -189,7 +189,7 @@ def mov_to_mem(context, size, dest, source):
     """)
 
 
-JUMP_NAMES = {
+CONDITION_NAMES = {
     "z": 0, "e": 0,
     "nz": 1, "ne": 1,
     "n": 2,
@@ -204,13 +204,13 @@ JUMP_NAMES = {
     "ge": 11,
     "le": 12,
     "g": 13, "gt": 13,
-    "mp": 14,
+    "mp": 14, "": 14,
 }
 
-@base.inst(f'/j{oneof(*JUMP_NAMES)}/ label')
+@base.inst(f'/j{oneof(*CONDITION_NAMES)}/ label')
 def base_jumps(context, inst: str, label: str):
     inst = inst.removeprefix('j')
-    op = JUMP_NAMES[inst]
+    op = CONDITION_NAMES[inst]
     target = context.resolve_label(label)
     if target is None:
         offset = 0
@@ -223,3 +223,7 @@ def base_jumps(context, inst: str, label: str):
 @base.inst('"nop"')
 def base_nop(context):
     return b"\x8f\x00"  # jump nowhere, never
+
+@base.inst('"hlt"')
+def base_hlt(context):
+    return b"\x8e\x00"  # jump nowhere, always
