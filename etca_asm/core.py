@@ -1,4 +1,5 @@
 from __future__ import annotations
+from cgitb import enable
 
 import copy
 import logging
@@ -144,8 +145,8 @@ def local_label_reference(context, dots, name: str):
 @core.inst(r'".extension" /\w+/ ( "," /\w+/)*')
 def enable_extension(context, *names: str):
     for name in names:
-        reject(name not in context.available_extensions,
-               f"Unknown extension {name!r}, expected one of {list(context.available_extensions)}")
+        if name not in context.available_extensions:
+            raise ValueError(f"Unknown extension {name!r}, expected one of {list(context.available_extensions)}")
         ext = potential_extensions[name]
         if ext not in context.enabled_extensions:
             context.enabled_extensions.append(ext)
@@ -221,7 +222,18 @@ class Assembler:
         core.init(self.context)
         self.context.modes = default_modes or set()
 
+    def set_default_size(self):
+        strids = map(lambda e: e.strid, self.context.enabled_extensions)
+        size = 'x'
+        if 'qword_operations' in strids:
+            size = 'q'
+        elif 'dword_operations' in strids:
+            size = 'd'
+        self.context.default_size = size
+
     def reload_extensions(self):
+        self.set_default_size()
+
         grammar_builder = GrammarBuilder()
         grammar_builder.load_grammar(open(Path(__file__).with_name("instruction.lark")).read(), "instruction.lark")
         existing_syntax_elements = {"instruction"}
