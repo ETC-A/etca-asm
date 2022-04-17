@@ -7,6 +7,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
+from pprint import pformat
 from types import SimpleNamespace
 from typing import Callable, TYPE_CHECKING, NamedTuple
 
@@ -79,6 +80,9 @@ class Extension:
             return func_or_none
         else:
             return self.set_init
+
+    def __repr__(self):
+        return f"<Extension: {self.strid} {self.name!r}>"
 
 
 core = Extension(None, "core", "Core Assembly", True)
@@ -214,13 +218,21 @@ class Assembler:
     def __init__(self, default_modes=None, available_extensions=None, logger: logging.Logger = None):
         self.context = Context()
         # Maybe these should be different loggers ?
-        self.logger = self.context.logger = logger or logging.getLogger(__name__)
-        self.context.available_extensions = available_extensions or set(potential_extensions)
-        self.context.output = []
-        self.context.reload_extensions = self.reload_extensions
-        self.context.macro = self.macro
+        self.logger = logger or logging.getLogger(__name__)
+        self.setup_context(True, default_modes=default_modes, available_extensions=available_extensions)
         core.init(self.context)
         self.context.modes = default_modes or set()
+
+    def setup_context(self, full_reset=False, **extras):
+        self.context.logger = self.logger
+        self.context.reload_extensions = self.reload_extensions
+        self.context.macro = self.macro
+        if full_reset:
+            self.context.output = []
+            self.context.available_extensions = extras.pop('available_extensions', None) or set(potential_extensions)
+            self.context.modes = extras.pop('default_modes', None) or set()
+        for k, v in extras.items():
+            setattr(self.context, k, v)
 
     def set_default_size(self):
         strids = map(lambda e: e.strid, self.context.enabled_extensions)
@@ -264,6 +276,9 @@ class Assembler:
                                    start="instruction", propagate_positions=True)
 
     def handle_instruction(self, line):
+        self.logger.debug(f"Enabled extensions: {self.context.enabled_extensions}")
+        self.logger.debug(f"Active modes: {self.context.modes}")
+        self.logger.debug(pformat(self.context))
         tree = self.current_parser.parse(line)
         if tree.data == "no_instruction":
             return
@@ -310,7 +325,7 @@ class Assembler:
             old = self.context.missing_labels, self.context.changed_labels
             old_labels = self.context.labels.copy()
             self.context = copy.deepcopy(start_context)
-            self.context.labels = old_labels
+            self.setup_context(False, labels = old_labels)
             self.reload_extensions()
             self.single_pass(full_text)
             if old == (self.context.missing_labels, self.context.changed_labels):
