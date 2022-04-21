@@ -1,7 +1,7 @@
 from bitarray import bitarray
 from bitarray.util import int2ba
 
-from etca_asm.core import Extension, reject, resolve_register_size
+from etca_asm.core import Extension, reject, resolve_register_size, oneof
 
 base = Extension(None, "base", "Base Instruction Set", True)
 
@@ -37,11 +37,6 @@ INSTRUCTIONS = {
     "mfcr": 0xE,
     "mtcr": 0xF,
 }
-
-
-def oneof(*names):
-    names=sorted(names, key=len, reverse=True)
-    return f"({'|'.join(names)})"
 
 
 def build(*parts: tuple[int, int]):

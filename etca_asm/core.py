@@ -113,26 +113,44 @@ def core_init(context):
             e.init(context)
     context.reload_extensions()
 
+def oneof(*names):
+    names=sorted(names, key=len, reverse=True)
+    return f"({'|'.join(names)})"
+
+_WORD_SIZES = {
+    '.half': 1,
+    '.word': 2,
+    '.dword': 4,
+}
+
+
+@core.inst(fr'/{oneof(*_WORD_SIZES)}/ immediate')
+def put_word(context, size, value):
+    return value.to_bytes(_WORD_SIZES[size], "little")
+
+
+@core.inst(r'".set" symbol immediate')
+def set_symbol(context, symbol, value):
+    dot_count, name = symbol
+    while len(context.symbol_path) < dot_count:
+        context.symbol_path.append('')
+    context.symbol_path[dot_count:] = [name]
+    full_name = '.'.join((*context.symbol_path[:dot_count], name))
+    if context.symbols.get(full_name, None) != value:
+        context.changed_symbols.add(full_name)
+    context.symbols[full_name] = value
+    return b''
+
 
 @core.inst('NAME ":"')
 def global_label(context, name: str):
-    context.symbol_path = [str(name)]
-    if context.symbols.get(name, context.ip) != context.ip:
-        context.changed_symbols.add(name)  # Don't mark completely new labels as changed
-    context.symbols[name] = context.ip
+    set_symbol(context, (0, name), context.ip)
     return b''
 
 
 @core.inst(r'/\.+/ NAME ":"')
 def local_label(context, dots: str, name: str):
-    dot_count = len(dots)
-    while len(context.symbol_path) < dot_count:
-        context.symbol_path.append('')
-    context.symbol_path[dot_count:] = [name]
-    full_name = '.'.join((*context.symbol_path[:dot_count], name))
-    if context.symbols.get(full_name, None) != context.ip:
-        context.changed_symbols.add(full_name)
-    context.symbols[full_name] = context.ip
+    set_symbol(context, (len(dots), name), context.ip)
     return b''
 
 
@@ -161,6 +179,16 @@ core.register_syntax('immediate', '/[+-]?[0-9]+(_[0-9]+)*/', lambda _, x: int(st
 core.register_syntax('immediate', '/[+-]?0[bB]_?[01]+(_[01]+)*/', lambda _, x: int(x[2:].removeprefix('_'), 2))
 core.register_syntax('immediate', '/[+-]?0[oO]_?[0-7]+(_[0-7]+)*/', lambda _, x: int(x[2:].removeprefix('_'), 8))
 core.register_syntax('immediate', '/[+-]?0x_?[0-9a-f]+(_[0-9a-f]+)*/i', lambda _, x: int(x[2:].removeprefix('_'), 16))
+
+
+@core.register_syntax('immediate', 'symbol')
+def immediate_symbol(context, symbol):
+    value = context.resolve_symbol(symbol)
+    if value is None:
+        # This symbol is not defined right now. To simplify instruction creators, make it 0 in this pass
+        return 0
+    else:
+        return value
 
 
 class _CompileInstruction(Transformer):
