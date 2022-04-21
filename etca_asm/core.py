@@ -88,12 +88,12 @@ class Extension:
 core = Extension(None, "core", "Core Assembly", True)
 
 
-def _resolve_label(context, name: tuple[int, str]) -> int | None:
-    full_name = '.'.join((*context.last_labels[:name[0]], name[1]))
-    if full_name in context.labels:
-        return context.labels[full_name]
+def _resolve_symbol(context, name: tuple[int, str]) -> int | None:
+    full_name = '.'.join((*context.symbol_path[:name[0]], name[1]))
+    if full_name in context.symbols:
+        return context.symbols[full_name]
     else:
-        context.missing_labels.add(full_name)
+        context.missing_symbols.add(full_name)
         return None
 
 
@@ -103,11 +103,11 @@ def core_init(context):
                                   if (e := potential_extensions[a]).default_on]
     context.modes = set()
     context.ip = 0x8000
-    context.labels = {}
-    context.last_labels = ['']
-    context.missing_labels = set()
-    context.changed_labels = set()
-    context.resolve_label = partial(_resolve_label, context)
+    context.symbols = {}
+    context.symbol_path = ['']
+    context.missing_symbols = set()
+    context.changed_symbols = set()
+    context.resolve_symbol = partial(_resolve_symbol, context)
     for e in potential_extensions.values():
         if e.init is not None and e is not core:
             e.init(context)
@@ -116,33 +116,33 @@ def core_init(context):
 
 @core.inst('NAME ":"')
 def global_label(context, name: str):
-    context.last_labels = [str(name)]
-    if context.labels.get(name, context.ip) != context.ip:
-        context.changed_labels.add(name)  # Don't mark completely new labels as changed
-    context.labels[name] = context.ip
+    context.symbol_path = [str(name)]
+    if context.symbols.get(name, context.ip) != context.ip:
+        context.changed_symbols.add(name)  # Don't mark completely new labels as changed
+    context.symbols[name] = context.ip
     return b''
 
 
 @core.inst(r'/\.+/ NAME ":"')
 def local_label(context, dots: str, name: str):
     dot_count = len(dots)
-    while len(context.last_labels) < dot_count:
-        context.last_labels.append('')
-    context.last_labels[dot_count:] = [name]
-    full_name = '.'.join((*context.last_labels[:dot_count], name))
-    if context.labels.get(full_name, None) != context.ip:
-        context.changed_labels.add(full_name)
-    context.labels[full_name] = context.ip
+    while len(context.symbol_path) < dot_count:
+        context.symbol_path.append('')
+    context.symbol_path[dot_count:] = [name]
+    full_name = '.'.join((*context.symbol_path[:dot_count], name))
+    if context.symbols.get(full_name, None) != context.ip:
+        context.changed_symbols.add(full_name)
+    context.symbols[full_name] = context.ip
     return b''
 
 
-@core.register_syntax('label', 'NAME')
-def global_label_reference(context, name: str):
+@core.register_syntax('symbol', 'NAME')
+def global_symbol_reference(context, name: str):
     return 0, str(name)
 
 
-@core.register_syntax('label', r'/\.+/ NAME')
-def local_label_reference(context, dots, name: str):
+@core.register_syntax('symbol', r'/\.+/ NAME')
+def local_symbol_reference(context, dots, name: str):
     return len(dots), str(name)
 
 
@@ -321,15 +321,15 @@ class Assembler:
     def n_pass(self, full_text) -> AssemblyResult:
         start_context = copy.deepcopy(self.context)
         self.single_pass(full_text)
-        while self.context.missing_labels or self.context.changed_labels:
-            old = self.context.missing_labels, self.context.changed_labels
-            old_labels = self.context.labels.copy()
+        while self.context.missing_symbols or self.context.changed_symbols:
+            old = self.context.missing_symbols, self.context.changed_symbols
+            old_symbols = self.context.symbols.copy()
             self.context = copy.deepcopy(start_context)
-            self.setup_context(False, labels = old_labels)
+            self.setup_context(False, symbols = old_symbols)
             self.reload_extensions()
             self.single_pass(full_text)
-            if old == (self.context.missing_labels, self.context.changed_labels):
-                raise ValueError(f"Stuck without further progress, still missing labels {self.context.missing_labels}")
+            if old == (self.context.missing_symbols, self.context.changed_symbols):
+                raise ValueError(f"Stuck without further progress, still missing symbols {self.context.missing_symbols}")
         return AssemblyResult(self.context.output)
 
 

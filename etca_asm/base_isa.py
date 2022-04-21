@@ -207,11 +207,11 @@ CONDITION_NAMES = {
     "mp": 14, "": 14,
 }
 
-@base.inst(f'/j{oneof(*CONDITION_NAMES)}/ label')
-def base_jumps(context, inst: str, label: str):
+@base.inst(f'/j{oneof(*CONDITION_NAMES)}/ symbol')
+def base_jumps(context, inst: str, symbol: str):
     inst = inst.removeprefix('j')
     op = CONDITION_NAMES[inst]
-    target = context.resolve_label(label)
+    target = context.resolve_symbol(symbol)
     if target is None:
         offset = 0
     else:

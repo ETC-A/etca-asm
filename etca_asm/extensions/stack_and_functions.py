@@ -74,9 +74,9 @@ def cond_abs_reg_call(cxt, inst: str, reg: Register):
     op = CONDITION_NAMES[cc]
     return build((0xAF,8), (src,3), (0b1,1), (op,4))
 
-@functions.inst('"call" label')
+@functions.inst('"call" symbol')
 def abs_near_call(cxt, lbl: str):
-    target = cxt.resolve_label(lbl)
+    target = cxt.resolve_symbol(lbl)
     if target is None:
         target = cxt.ip
     bottom_mask = 0xfff
