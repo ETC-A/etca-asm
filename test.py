@@ -10,7 +10,7 @@ etca_asm.extensions.import_all_extensions()
 ass = Assembler()
 
 res = ass.n_pass("""
-.set test 555
+.set test '\\n'
 .dword test
 """)
 

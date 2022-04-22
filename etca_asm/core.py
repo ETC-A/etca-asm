@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+from ast import literal_eval
 from cgitb import enable
 
 import copy
@@ -175,10 +177,12 @@ def enable_extension(context, *names: str):
     context.reload_extensions()
 
 
-core.register_syntax('immediate', '/[+-]?[0-9]+(_[0-9]+)*/', lambda _, x: int(str(x), 10))
-core.register_syntax('immediate', '/[+-]?0[bB]_?[01]+(_[01]+)*/', lambda _, x: int(x[2:].removeprefix('_'), 2))
-core.register_syntax('immediate', '/[+-]?0[oO]_?[0-7]+(_[0-7]+)*/', lambda _, x: int(x[2:].removeprefix('_'), 8))
-core.register_syntax('immediate', '/[+-]?0x_?[0-9a-f]+(_[0-9a-f]+)*/i', lambda _, x: int(x[2:].removeprefix('_'), 16))
+core.register_syntax('immediate', r'/[+-]?[0-9]+(_[0-9]+)*/', lambda _, x: int(str(x), 10))
+core.register_syntax('immediate', r'/[+-]?0[bB]_?[01]+(_[01]+)*/', lambda _, x: int(x[2:].removeprefix('_'), 2))
+core.register_syntax('immediate', r'/[+-]?0[oO]_?[0-7]+(_[0-7]+)*/', lambda _, x: int(x[2:].removeprefix('_'), 8))
+core.register_syntax('immediate', r'/[+-]?0x_?[0-9a-f]+(_[0-9a-f]+)*/i', lambda _, x: int(x[2:].removeprefix('_'), 16))
+
+core.register_syntax('immediate', r"/'([^'\\\n]|\\[^\n])'/", lambda _, x: ord(literal_eval(x)))
 
 
 @core.register_syntax('immediate', 'symbol')
