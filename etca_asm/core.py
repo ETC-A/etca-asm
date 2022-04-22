@@ -95,6 +95,7 @@ def _resolve_symbol(context, name: tuple[int, str]) -> int | None:
     if full_name in context.symbols:
         return context.symbols[full_name]
     else:
+        reject(full_name in context.illegal_symbols, f"Symbol {full_name} is not defined")
         context.missing_symbols.add(full_name)
         return None
 
@@ -109,15 +110,18 @@ def core_init(context):
     context.symbol_path = ['']
     context.missing_symbols = set()
     context.changed_symbols = set()
+    context.illegal_symbols = set()
     context.resolve_symbol = partial(_resolve_symbol, context)
     for e in potential_extensions.values():
         if e.init is not None and e is not core:
             e.init(context)
     context.reload_extensions()
 
+
 def oneof(*names):
-    names=sorted(names, key=len, reverse=True)
+    names = sorted(names, key=len, reverse=True)
     return f"({'|'.join(names)})"
+
 
 _WORD_SIZES = {
     '.half': 1,
@@ -328,8 +332,13 @@ class Assembler:
         if not results:
             raise NotImplementedError("Everyone rejected", line, rejections)
         if len(results) > 1:
-            raise NotImplementedError("Prioritization is not implemented", results)
-        result, = results
+            #  TODO: Maybe raise errors on later passes if this isn't resolved?
+            #        OTOH if these ambiguities are actually correct, it shouldn't hurt
+            #        Maybe each option should be required to return some kind of cost factor?
+            result = min(results, key=len)
+            # raise NotImplementedError("Prioritization is not implemented", results)
+        else:
+            result, = results
         if result is not None:
             self.context.output.append(InstructionOutput(self.context.ip, result, line))
             self.context.ip += len(result)
@@ -357,11 +366,12 @@ class Assembler:
             old = self.context.missing_symbols, self.context.changed_symbols
             old_symbols = self.context.symbols.copy()
             self.context = copy.deepcopy(start_context)
-            self.setup_context(False, symbols = old_symbols)
+            self.setup_context(False, symbols=old_symbols, illegal_symbols=old[0].difference(old_symbols))
             self.reload_extensions()
             self.single_pass(full_text)
             if old == (self.context.missing_symbols, self.context.changed_symbols):
-                raise ValueError(f"Stuck without further progress, still missing symbols {self.context.missing_symbols}")
+                raise ValueError(
+                    f"Stuck without further progress, still missing symbols {self.context.missing_symbols}")
         return AssemblyResult(self.context.output)
 
 
