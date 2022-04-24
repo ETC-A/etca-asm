@@ -1,6 +1,6 @@
 from etca_asm.core import Extension
 
-qword = Extension(4, "qword_operations", "Quad Word Operations")
+qword = Extension(15, "qword_operations", "Quad Word Operations")
 
 
 @qword.set_init

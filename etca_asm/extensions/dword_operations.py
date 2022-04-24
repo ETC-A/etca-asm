@@ -1,6 +1,6 @@
 from etca_asm.core import Extension
 
-dword = Extension(4, "dword_operations", "Double Word Operations")
+dword = Extension(14, "dword_operations", "Double Word Operations")
 
 
 @dword.set_init
