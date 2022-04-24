@@ -141,7 +141,8 @@ def cr_n(context, cr):
 
 NAMED_CRS = {
     "cpuid": 0,
-    "exten": 1
+    "exten": 1,
+    "feat": 2
 }
 
 
