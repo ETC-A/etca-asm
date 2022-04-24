@@ -214,3 +214,7 @@ def base_jumps(context, inst: str, label: str):
 @base.inst('"nop"')
 def base_nop(context):
     return b"\x8f\x00"  # jump nowhere, never
+
+@base.inst('"halt|hlt"')
+def base_halt(context):
+    return b"\x8e\x00"  # jump nowhere, always
