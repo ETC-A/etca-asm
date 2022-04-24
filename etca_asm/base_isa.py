@@ -212,7 +212,7 @@ def base_jumps(context, inst: str, symbol: str):
     else:
         offset = target - context.ip
     reject(not (-256 <= offset < 256))
-    return build((0b100, 3), (offset & 100 >> 8, 1), (op, 4), (offset & 0xFF, 8))
+    return build((0b100, 3), (offset & 0x100 >> 8, 1), (op, 4), (offset & 0xFF, 8))
 
 
 @base.inst('"nop"')
