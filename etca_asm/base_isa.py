@@ -129,7 +129,7 @@ def base_computations_imm(context, inst: str, inst_size: str | None, reg: tuple[
 
     op = INSTRUCTIONS[inst]
 
-    if op < 12:
+    if op <= 7 or op == 9:
         reject(not isinstance(imm, int) or not (-16 <= imm < 16),
                f"Invalid immediate for base {imm} with opcode {inst}")
     else:
