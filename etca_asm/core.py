@@ -170,7 +170,8 @@ def local_symbol_reference(context, dots, name: str):
     return len(dots), str(name)
 
 
-@core.inst(r'".extension" /\w+/ ( "," /\w+/)*')
+@core.inst(r'".extension" /\w+/')
+@core.inst(r'".extensions" /\w+/ ( "," /\w+/)*')
 def enable_extension(context, *names: str):
     for name in names:
         if name not in context.available_extensions:
