@@ -36,12 +36,12 @@ def fn_gp_registers(cxt, pref, size, suff):
 @functions.inst(f'"pop" size_postfix register')
 def pop_inst(cxt, inst_size, reg: Register):
     size, (dst,) = validate_registers(cxt, reg, inst_size=inst_size)
-    return build((0b00,2), (cxt.register_sizes[size],2), (0xC,4), (dst,3), (0b00000,5))
+    return build((0b00,2), (cxt.register_sizes[size],2), (0xC,4), (dst,3), (6,3), (0b00,2))
 
 @functions.inst(f'"push" size_postfix register')
 def push_register_inst(cxt, inst_size, reg: Register):
     size, (src,) = validate_registers(cxt, reg, inst_size=inst_size)
-    return build((0b00,2), (cxt.register_sizes[size],2), (0xD,4), (0b000,3), (src,3), (0b00,2))
+    return build((0b00,2), (cxt.register_sizes[size],2), (0xD,4), (6,3), (src,3), (0b00,2))
 
 @functions.inst(f'"push" size_postfix immediate')
 def push_register_imm(cxt, inst_size, imm: int):
@@ -75,16 +75,17 @@ def cond_abs_reg_call(cxt, inst: str, reg: Register):
     return build((0xAF,8), (src,3), (0b1,1), (op,4))
 
 @functions.inst('"call" symbol')
-def abs_near_call(cxt, lbl: str):
+def rel_near_imm_call(cxt, lbl: str):
     target = cxt.resolve_symbol(lbl)
     if target is None:
-        target = cxt.ip
+        offset = 0
+    else:
+        offset = target - cxt.ip
     bottom_mask = 0xfff
-    top_mask = ~bottom_mask
     reject(
-        (top_mask & target) != (top_mask & cxt.ip),
-        f"""Cannot encode far call:
+        offset < -2048 or offset > 2047,
+        f"""Cannot encode near call:
     from `call {lbl}'     at 0x{cxt.ip:04x}
-    to   `{lbl}' resolved to 0x{target:04x}"""
+    to   `{lbl}' resolved to 0x{offset:04x}"""
     )
-    return build((0xB,4), (bottom_mask & target, 12))
+    return build((0xB,4), (bottom_mask & offset, 12))
