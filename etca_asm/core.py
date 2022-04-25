@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from ast import literal_eval
+
 import copy
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
+from pprint import pformat
 from types import SimpleNamespace
 from typing import Callable, TYPE_CHECKING, NamedTuple
 
@@ -79,16 +82,20 @@ class Extension:
         else:
             return self.set_init
 
+    def __repr__(self):
+        return f"<Extension: {self.strid} {self.name!r}>"
+
 
 core = Extension(None, "core", "Core Assembly", True)
 
 
-def _resolve_label(context, name: tuple[int, str]) -> int | None:
-    full_name = '.'.join((*context.last_labels[:name[0]], name[1]))
-    if full_name in context.labels:
-        return context.labels[full_name]
+def _resolve_symbol(context, name: tuple[int, str]) -> int | None:
+    full_name = '.'.join((*context.symbol_path[:name[0]], name[1]))
+    if full_name in context.symbols:
+        return context.symbols[full_name]
     else:
-        context.missing_labels.add(full_name)
+        reject(full_name in context.illegal_symbols, f"Symbol {full_name} is not defined")
+        context.missing_symbols.add(full_name)
         return None
 
 
@@ -98,64 +105,98 @@ def core_init(context):
                                   if (e := potential_extensions[a]).default_on]
     context.modes = set()
     context.ip = 0x8000
-    context.labels = {}
-    context.last_labels = ['']
-    context.missing_labels = set()
-    context.changed_labels = set()
-    context.resolve_label = partial(_resolve_label, context)
+    context.symbols = {}
+    context.symbol_path = ['']
+    context.missing_symbols = set()
+    context.changed_symbols = set()
+    context.illegal_symbols = set()
+    context.resolve_symbol = partial(_resolve_symbol, context)
     for e in potential_extensions.values():
         if e.init is not None and e is not core:
             e.init(context)
     context.reload_extensions()
 
 
+def oneof(*names):
+    names = sorted(names, key=len, reverse=True)
+    return f"({'|'.join(names)})"
+
+
+_WORD_SIZES = {
+    '.half': 1,
+    '.word': 2,
+    '.dword': 4,
+}
+
+
+@core.inst(fr'/{oneof(*_WORD_SIZES)}/ immediate')
+def put_word(context, size, value):
+    return value.to_bytes(_WORD_SIZES[size], "little")
+
+
+@core.inst(r'".set" symbol immediate')
+def set_symbol(context, symbol, value):
+    dot_count, name = symbol
+    while len(context.symbol_path) < dot_count:
+        context.symbol_path.append('')
+    context.symbol_path[dot_count:] = [name]
+    full_name = '.'.join((*context.symbol_path[:dot_count], name))
+    if context.symbols.get(full_name, None) != value:
+        context.changed_symbols.add(full_name)
+    context.symbols[full_name] = value
+    return b''
+
+
 @core.inst('NAME ":"')
 def global_label(context, name: str):
-    context.last_labels = [str(name)]
-    if context.labels.get(name, context.ip) != context.ip:
-        context.changed_labels.add(name)  # Don't mark completely new labels as changed
-    context.labels[name] = context.ip
+    set_symbol(context, (0, name), context.ip)
     return b''
 
 
 @core.inst(r'/\.+/ NAME ":"')
 def local_label(context, dots: str, name: str):
-    dot_count = len(dots)
-    while len(context.last_labels) < dot_count:
-        context.last_labels.append('')
-    context.last_labels[dot_count:] = [name]
-    full_name = '.'.join((*context.last_labels[:dot_count], name))
-    if context.labels.get(full_name, None) != context.ip:
-        context.changed_labels.add(full_name)
-    context.labels[full_name] = context.ip
+    set_symbol(context, (len(dots), name), context.ip)
     return b''
 
 
-@core.register_syntax('label', 'NAME')
-def global_label_reference(context, name: str):
+@core.register_syntax('symbol', 'NAME')
+def global_symbol_reference(context, name: str):
     return 0, str(name)
 
 
-@core.register_syntax('label', r'/\.+/ NAME')
-def local_label_reference(context, dots, name: str):
+@core.register_syntax('symbol', r'/\.+/ NAME')
+def local_symbol_reference(context, dots, name: str):
     return len(dots), str(name)
 
 
-@core.inst(r'".extension" /\w+/ ( "," /\w+/)*')
+@core.inst(r'".extension" /\w+/')
+@core.inst(r'".extensions" /\w+/ ( "," /\w+/)*')
 def enable_extension(context, *names: str):
     for name in names:
-        reject(name not in context.available_extensions,
-               f"Unknown extension {name!r}, expected one of {list(context.available_extensions)}")
+        if name not in context.available_extensions:
+            raise ValueError(f"Unknown extension {name!r}, expected one of {list(context.available_extensions)}")
         ext = potential_extensions[name]
         if ext not in context.enabled_extensions:
             context.enabled_extensions.append(ext)
     context.reload_extensions()
 
 
-core.register_syntax('immediate', '/[+-]?[0-9]+(_[0-9]+)*/', lambda _, x: int(str(x), 10))
-core.register_syntax('immediate', '/[+-]?0[bB]_?[01]+(_[01]+)*/', lambda _, x: int(x[2:].removeprefix('_'), 2))
-core.register_syntax('immediate', '/[+-]?0[oO]_?[0-7]+(_[0-7]+)*/', lambda _, x: int(x[2:].removeprefix('_'), 8))
-core.register_syntax('immediate', '/[+-]?0x_?[0-9a-f]+(_[0-9a-f]+)*/i', lambda _, x: int(x[2:].removeprefix('_'), 16))
+core.register_syntax('immediate', r'/[+-]?[0-9]+(_[0-9]+)*/', lambda _, x: int(str(x), 10))
+core.register_syntax('immediate', r'/[+-]?0[bB]_?[01]+(_[01]+)*/', lambda _, x: int(x[2:].removeprefix('_'), 2))
+core.register_syntax('immediate', r'/[+-]?0[oO]_?[0-7]+(_[0-7]+)*/', lambda _, x: int(x[2:].removeprefix('_'), 8))
+core.register_syntax('immediate', r'/[+-]?0x_?[0-9a-f]+(_[0-9a-f]+)*/i', lambda _, x: int(x[2:].removeprefix('_'), 16))
+
+core.register_syntax('immediate', r"/'([^'\\\n]|\\[^\n])'/", lambda _, x: ord(literal_eval(x)))
+
+
+@core.register_syntax('immediate', 'symbol')
+def immediate_symbol(context, symbol):
+    value = context.resolve_symbol(symbol)
+    if value is None:
+        # This symbol is not defined right now. To simplify instruction creators, make it 0 in this pass
+        return 0
+    else:
+        return value
 
 
 class _CompileInstruction(Transformer):
@@ -213,15 +254,34 @@ class Assembler:
     def __init__(self, default_modes=None, available_extensions=None, logger: logging.Logger = None):
         self.context = Context()
         # Maybe these should be different loggers ?
-        self.logger = self.context.logger = logger or logging.getLogger(__name__)
-        self.context.available_extensions = available_extensions or set(potential_extensions)
-        self.context.output = []
-        self.context.reload_extensions = self.reload_extensions
-        self.context.macro = self.macro
+        self.logger = logger or logging.getLogger(__name__)
+        self.setup_context(True, default_modes=default_modes, available_extensions=available_extensions)
         core.init(self.context)
         self.context.modes = default_modes or set()
 
+    def setup_context(self, full_reset=False, **extras):
+        self.context.logger = self.logger
+        self.context.reload_extensions = self.reload_extensions
+        self.context.macro = self.macro
+        if full_reset:
+            self.context.output = []
+            self.context.available_extensions = extras.pop('available_extensions', None) or set(potential_extensions)
+            self.context.modes = extras.pop('default_modes', None) or set()
+        for k, v in extras.items():
+            setattr(self.context, k, v)
+
+    def set_default_size(self):
+        strids = map(lambda e: e.strid, self.context.enabled_extensions)
+        size = 'x'
+        if 'qword_operations' in strids:
+            size = 'q'
+        elif 'dword_operations' in strids:
+            size = 'd'
+        self.context.default_size = size
+
     def reload_extensions(self):
+        self.set_default_size()
+
         grammar_builder = GrammarBuilder()
         grammar_builder.load_grammar(open(Path(__file__).with_name("instruction.lark")).read(), "instruction.lark")
         existing_syntax_elements = {"instruction"}
@@ -252,6 +312,9 @@ class Assembler:
                                    start="instruction", propagate_positions=True)
 
     def handle_instruction(self, line):
+        self.logger.debug(f"Enabled extensions: {self.context.enabled_extensions}")
+        self.logger.debug(f"Active modes: {self.context.modes}")
+        self.logger.debug(pformat(self.context))
         tree = self.current_parser.parse(line)
         if tree.data == "no_instruction":
             return
@@ -269,8 +332,13 @@ class Assembler:
         if not results:
             raise NotImplementedError("Everyone rejected", line, rejections)
         if len(results) > 1:
-            raise NotImplementedError("Prioritization is not implemented", results)
-        result, = results
+            #  TODO: Maybe raise errors on later passes if this isn't resolved?
+            #        OTOH if these ambiguities are actually correct, it shouldn't hurt
+            #        Maybe each option should be required to return some kind of cost factor?
+            result = min(results, key=len)
+            # raise NotImplementedError("Prioritization is not implemented", results)
+        else:
+            result, = results
         if result is not None:
             self.context.output.append(InstructionOutput(self.context.ip, result, line))
             self.context.ip += len(result)
@@ -294,15 +362,16 @@ class Assembler:
     def n_pass(self, full_text) -> AssemblyResult:
         start_context = copy.deepcopy(self.context)
         self.single_pass(full_text)
-        while self.context.missing_labels or self.context.changed_labels:
-            old = self.context.missing_labels, self.context.changed_labels
-            old_labels = self.context.labels.copy()
+        while self.context.missing_symbols or self.context.changed_symbols:
+            old = self.context.missing_symbols, self.context.changed_symbols
+            old_symbols = self.context.symbols.copy()
             self.context = copy.deepcopy(start_context)
-            self.context.labels = old_labels
+            self.setup_context(False, symbols=old_symbols, illegal_symbols=old[0].difference(old_symbols))
             self.reload_extensions()
             self.single_pass(full_text)
-            if old == (self.context.missing_labels, self.context.changed_labels):
-                raise ValueError(f"Stuck without further progress, still missing labels {self.context.missing_labels}")
+            if old == (self.context.missing_symbols, self.context.changed_symbols):
+                raise ValueError(
+                    f"Stuck without further progress, still missing symbols {self.context.missing_symbols}")
         return AssemblyResult(self.context.output)
 
 

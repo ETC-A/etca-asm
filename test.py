@@ -10,10 +10,8 @@ etca_asm.extensions.import_all_extensions()
 ass = Assembler()
 
 res = ass.n_pass("""
-.syntax prefix
-.strict
-.extension byte_operations, dword_operations, qword_operations
-movx %rx0, 1000
+.set test '\\n'
+.dword test
 """)
 
 print(res.to_bytes().hex(' ', 2))

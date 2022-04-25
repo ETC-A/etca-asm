@@ -1,7 +1,7 @@
 from bitarray import bitarray
 from bitarray.util import int2ba
 
-from etca_asm.core import Extension, reject, resolve_register_size
+from etca_asm.core import Extension, reject, resolve_register_size, oneof
 
 base = Extension(None, "base", "Base Instruction Set", True)
 
@@ -37,11 +37,6 @@ INSTRUCTIONS = {
     "mfcr": 0xE,
     "mtcr": 0xF,
 }
-
-
-def oneof(*names):
-    names=sorted(names, key=len, reverse=True)
-    return f"({'|'.join(names)})"
 
 
 def build(*parts: tuple[int, int]):
@@ -124,7 +119,7 @@ def base_computations_imm(context, inst: str, inst_size: str | None, reg: tuple[
 
     op = INSTRUCTIONS[inst]
 
-    if op < 8 or op == 9:
+    if op <= 7 or op == 9:
         reject(not isinstance(imm, int) or not (-16 <= imm < 16),
                f"Invalid immediate for base {imm} with opcode {inst}")
     else:
@@ -180,7 +175,7 @@ def mov_to_mem(context, size, dest, source):
     """)
 
 
-JUMP_NAMES = {
+CONDITION_NAMES = {
     "z": 0, "e": 0,
     "nz": 1, "ne": 1,
     "n": 2,
@@ -195,20 +190,20 @@ JUMP_NAMES = {
     "ge": 11,
     "le": 12,
     "g": 13, "gt": 13,
-    "mp": 14,
+    "mp": 14, "": 14,
 }
 
-@base.inst(f'/j{oneof(*JUMP_NAMES)}/ label')
-def base_jumps(context, inst: str, label: str):
+@base.inst(f'/j{oneof(*CONDITION_NAMES)}/ symbol')
+def base_jumps(context, inst: str, symbol: str):
     inst = inst.removeprefix('j')
-    op = JUMP_NAMES[inst]
-    target = context.resolve_label(label)
+    op = CONDITION_NAMES[inst]
+    target = context.resolve_symbol(symbol)
     if target is None:
         offset = 0
     else:
         offset = target - context.ip
     reject(not (-256 <= offset < 256))
-    return build((0b100, 3), (offset & 100 >> 8, 1), (op, 4), (offset & 0xFF, 8))
+    return build((0b100, 3), (offset < 0, 1), (op, 4), (offset & 0xFF, 8))
 
 
 @base.inst('"nop"')
