@@ -18,6 +18,12 @@ def mov_large_immediate(context, _, reg, imm):
             movx {reg}, {sign_extend((imm & 0b11_1110_0000) >> 5, 5)}
             slox {reg}, {(imm & 0b00_0001_1111) >> 0}
         """)
+    elif not bool(imm & 0x8000) and bool(imm & 0x4000):
+        return context.macro(f"""
+            movzx {reg}, {(imm & 0b0111_1100_0000_0000) >> 10}
+            slox {reg}, {(imm & 0b0000_0011_1110_0000) >> 5}
+            slox {reg}, {(imm & 0b0000_0000_0001_1111) >> 0}
+        """)
     elif bool(imm & 0x8000) != bool(imm & 0x4000):
         return context.macro(f"""
             movx {reg}, {(imm & 0b1000_0000_0000_0000) >> 15}

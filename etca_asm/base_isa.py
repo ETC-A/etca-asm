@@ -108,11 +108,6 @@ def size_prefix_x(context, x=None):
 def base_computations_2reg(context, inst: str, inst_size, a: tuple[int | None, int], b: tuple[int | None, int]):
     size, (a, b) = validate_registers(context, a, b, inst_size=inst_size)
 
-    if inst == "movz":
-        reject(not any(n in context.enabled_extensions
-                       for n in ("byte_operations", "dword_operations", "qword_operations",)),
-               "movz is only valid if any of the alternative register size extensions are enabled")
-
     op = INSTRUCTIONS[inst]
     reject(op >= 12, f"Opcode {op} doesn't have a 2 register form")
     return build((0b00, 2), (context.register_sizes[size], 2), (op, 4), (a, 3), (b, 3), (0, 2))
@@ -121,11 +116,6 @@ def base_computations_2reg(context, inst: str, inst_size, a: tuple[int | None, i
 @base.inst(f'/{oneof(*INSTRUCTIONS)}/ size_postfix register "," immediate')
 def base_computations_imm(context, inst: str, inst_size: str | None, reg: tuple[str | None, int], imm: int):
     size, (a,) = validate_registers(context, reg, inst_size=inst_size)
-
-    if inst == "movz":
-        reject(not any(e.strid in ("byte_operations", "dword_operations", "qword_operations",)
-                       for e in context.enabled_extensions),
-               "movz is only valid if any of the alternative register size extensions are enabled")
 
     op = INSTRUCTIONS[inst]
 
@@ -146,7 +136,8 @@ def cr_n(context, cr):
 
 NAMED_CRS = {
     "cpuid": 0,
-    "exten": 1
+    "exten": 1,
+    "feat": 2
 }
 
 
@@ -219,6 +210,6 @@ def base_jumps(context, inst: str, symbol: str):
 def base_nop(context):
     return b"\x8f\x00"  # jump nowhere, never
 
-@base.inst('"hlt"')
-def base_hlt(context):
+@base.inst('"halt" | "hlt"')
+def base_halt(context):
     return b"\x8e\x00"  # jump nowhere, always
