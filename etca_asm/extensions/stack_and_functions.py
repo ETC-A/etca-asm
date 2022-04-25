@@ -20,9 +20,9 @@ REGISTERS = {
 def fn_ptr_registers(cxt, name, size):
     return size, REGISTERS[name]
 
-@functions.reg(fr'"%" /(a|v|s)/ size_infix /(?!<\s)[0-1]/')
+@functions.reg(fr'"%" /(a|v|s)/ size_infix /(?!<\s)[0-2]/')
 #@functions.reg(fr'/(a|v|s)/ size_infix /[0-1]/', prefix=False)
-@functions.reg(fr'/(a|v|s)/ size_infix /(?!<\s)[0-1]/', prefix=False)
+@functions.reg(fr'/(a|v|s)/ size_infix /(?!<\s)[0-2]/', prefix=False)
 def fn_gp_registers(cxt, pref, size, suff):
     name = pref + suff
     reject(not name in REGISTERS.keys(), f"Unknown register name `{name}'")
