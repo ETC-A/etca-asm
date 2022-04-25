@@ -10,7 +10,7 @@ def sign_extend(value, bits):
 
 @common_macros.inst('/mov/ register_raw "," immediate')
 def mov_large_immediate(context, _, reg, imm):
-    reject(not ((-0x8000 <= imm <= 0) or (0 <= imm <= 0xFFFF)))
+    reject(not (-0x8000 <= imm <= 0xFFFF))
     imm = imm & 0xFFFF
     if imm < 2**4 or imm > 2 ** 16 - 2 ** 4:
         return context.macro(f"""
