@@ -8,14 +8,21 @@ def sign_extend(value, bits):
     return (value & (sign_bit - 1)) - (value & sign_bit)
 
 
-@common_macros.inst('/movx?/ register_raw "," immediate', strict=False)
-@common_macros.inst('/movx/ register_raw "," immediate', strict=True)
+@common_macros.inst('/mov/ register_raw "," immediate')
 def mov_large_immediate(context, _, reg, imm):
-    reject(not ((-0x8000 <= imm < -0x10) or (0x10 <= imm <= 0xFFFF)))
+    reject(not (-0x8000 <= imm <= 0xFFFF))
     imm = imm & 0xFFFF
-    if imm < 2 ** 9 or imm > 2 ** 16 - 2 ** 9:
+    if imm < 2**4 or imm > 2 ** 16 - 2 ** 4:
         return context.macro(f"""
-            movx {reg}, {sign_extend((imm & 0b11_1110_0000) >> 5, 5)}
+            movsx {reg}, {sign_extend(imm, 5)}
+        """)
+    elif 0 <= imm < 2 ** 5:
+        return context.macro(f"""
+            movzx {reg}, {imm}
+        """)
+    elif imm < 2 ** 9 or imm > 2 ** 16 - 2 ** 9:
+        return context.macro(f"""
+            movsx {reg}, {sign_extend((imm & 0b11_1110_0000) >> 5, 5)}
             slox {reg}, {(imm & 0b00_0001_1111) >> 0}
         """)
     elif not bool(imm & 0x8000) and bool(imm & 0x4000):
@@ -26,14 +33,14 @@ def mov_large_immediate(context, _, reg, imm):
         """)
     elif bool(imm & 0x8000) != bool(imm & 0x4000):
         return context.macro(f"""
-            movx {reg}, {(imm & 0b1000_0000_0000_0000) >> 15}
+            movzx {reg}, {(imm & 0b1000_0000_0000_0000) >> 15}
             slox {reg}, {(imm & 0b0111_1100_0000_0000) >> 10}
             slox {reg}, {(imm & 0b0000_0011_1110_0000) >> 5}
             slox {reg}, {(imm & 0b0000_0000_0001_1111) >> 0}
         """)
     else:
         return context.macro(f"""
-            movx {reg}, {sign_extend((imm & 0b0111_1100_0000_0000) >> 10, 5)}
+            movsx {reg}, {sign_extend((imm & 0b0111_1100_0000_0000) >> 10, 5)}
             slox {reg}, {(imm & 0b0000_0011_1110_0000) >> 5}
             slox {reg}, {(imm & 0b0000_0000_0001_1111) >> 0}
         """)
