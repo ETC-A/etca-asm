@@ -7,7 +7,7 @@ Register = tuple[int | None, int]
 REGISTERS = {
     "a0": 0,
     "a1": 1,
-    "v0": 2,
+    "a2": 2,
     "s0": 3,
     "s1": 4,
     "bp": 5,
@@ -45,7 +45,7 @@ def push_register_imm(cxt, inst_size, imm: int):
         not isinstance(imm, int) or not (0 <= imm < 32),
         f"Invalidate immediate {imm} for op `push'"
     )
-    return build((0b01,2), (cxt.register_sizes[size],2), (0xD,4), (0b000,3), (imm,5))
+    return build((0b01,2), (cxt.register_sizes[size],2), (0xD,4), (6,3), (imm,5))
 
 @functions.inst(f'/j{oneof(*CONDITION_NAMES)}/ register')
 def cond_abs_reg_jump(cxt, inst: str, reg: Register):
