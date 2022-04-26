@@ -37,7 +37,7 @@ def output_as_binary(res, out_file):
 
 def output_as_tc_8(res, out_file):
   with open(out_file,'w') as f:
-    for instr in res.output:
+    for instr in res.output_with_aligns():
       encoding = ' '.join(f'0x{b:02x}' for b in instr.binary)
       f.write(f"{encoding:10} # {instr.raw_line}\n")
 
@@ -54,7 +54,7 @@ def output_as_tc_64(res, out_file):
       ct = 0
       bs = b''
       waiting = []
-    for instr in res.output:
+    for instr in res.output_with_aligns():
       ct += len(instr.binary)
       waiting.append(instr)
       bs += instr.binary
@@ -65,7 +65,7 @@ def output_as_tc_64(res, out_file):
 
 def output_as_annotated(res, out_file):
   with open(out_file,'w') as f:
-    for instr in res.output:
+    for instr in res.output_with_aligns():
       encoding = ' '.join('{:02x}'.format(b) for b in instr.binary)
       f.write(f"0x{instr.start_ip:04x}: {encoding:30}# {instr.raw_line}\n")
 
