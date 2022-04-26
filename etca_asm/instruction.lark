@@ -8,3 +8,5 @@ _NOMATCH: /(?!_)_/
 %ignore /;[^\n]*/
 %import common.WS_INLINE
 %import common.NEWLINE -> _NEWLINE
+
+%import common.ESCAPED_STRING
