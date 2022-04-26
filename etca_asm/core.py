@@ -10,7 +10,7 @@ from functools import partial
 from pathlib import Path
 from pprint import pformat
 from types import SimpleNamespace
-from typing import Callable, TYPE_CHECKING, NamedTuple
+from typing import Callable, NamedTuple
 
 from frozendict import frozendict
 from lark import Lark, Transformer, GrammarError
@@ -116,7 +116,7 @@ def core_init(context):
     context.reload_extensions()
 
 
-def oneof(*names):
+def oneof(*names: str):
     names = sorted(names, key=len, reverse=True)
     return f"({'|'.join(names)})"
 
@@ -134,10 +134,45 @@ def put_word(context, size, *values):
     return b"".join(value.to_bytes(_WORD_SIZES[size], "little") for value in values)
 
 
-@core.inst(fr'/\.asciiz?/ ESCAPED_STRING')
-def put_string(context, ascii, string):
+encodings = {
+    'ascii': 'ascii',
+    'utf8': 'utf-8'
+}
+
+
+@core.inst(fr'/\.{oneof(*encodings)}/ ESCAPED_STRING')
+def put_string(context, encoding, string):
     string = literal_eval(string)
-    return string.encode("ascii") + (b"\x00" if ascii == '.asciiz' else b"")
+    return string.encode(encodings[encoding[1:]])
+
+
+@core.inst(fr'/\.{oneof(*encodings)}z/ ESCAPED_STRING')
+def put_stringz(context, encoding, string):
+    string = literal_eval(string)
+    return string.encode(encodings[encoding[1:-1]]) + b"\x00"
+
+
+@core.inst(fr'/\.b?align/ size_postfix immediate')
+@core.inst(fr'/\.b?align/ size_postfix immediate "," [ immediate] ["," immediate]')
+def balign(context, _, size, width, fill_value=None, max_jump=None):
+    delta = (width - context.ip % width) % width
+    assert (context.ip + delta) % width == 0, (context.ip, delta, width)
+    word_width = (2 ** context.register_sizes[size]) if size is not None else 1
+    if max_jump is not None and max_jump < width:
+        return b""
+    elif fill_value is None:
+        # TODO: This is a side effect in the context that isn't save with regards to ambiguities
+        context.ip += delta
+        return b""
+    else:
+        fv = fill_value.to_bytes(word_width, "little")
+        return fv * (delta // word_width) + fv[:delta % word_width]
+
+
+@core.inst(fr'/\.p2align/ size_postfix immediate')
+@core.inst(fr'/\.p2align/ size_postfix immediate "," [ immediate] ["," immediate]')
+def p2align(context, _, size, width, fill_value=None, max_jump=None):
+    return balign(context, _, size, 2**width, fill_value, max_jump)
 
 
 @core.inst(r'".set" symbol immediate')

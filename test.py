@@ -10,11 +10,15 @@ etca_asm.extensions.import_all_extensions()
 ass = Assembler()
 
 res = ass.n_pass("""
-.half 'H' 'e' 'l' 'l' 'o' ',' 'W' 'o' 'r' 'l' 'd' '!'
-.word 0 0
+.half 'H' 'e' 'l' 'l' 'o' ',' ' ' 'W' 'o' 'r' 'l' 'd' '!'
+.align 2
 .ascii "Hello, World!"
-.word 0 0
+.align 4
 .asciiz "Hello, World!"
+.align 8, 0xFF
+.utf8 "Äuglein 👀"
+.align 16
+.p2align 16 ,, 16
 """)
 
-print(res.to_bytes().hex(' ', 2))
+print(res.to_bytes().hex(' ', -2))
