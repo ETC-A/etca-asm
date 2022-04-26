@@ -12,7 +12,6 @@ from pprint import pformat
 from types import SimpleNamespace
 from typing import Callable, TYPE_CHECKING, NamedTuple
 
-import lark.load_grammar
 from frozendict import frozendict
 from lark import Lark, Transformer, GrammarError
 from lark.load_grammar import GrammarBuilder
@@ -126,12 +125,19 @@ _WORD_SIZES = {
     '.half': 1,
     '.word': 2,
     '.dword': 4,
+    '.qword': 8,
 }
 
 
-@core.inst(fr'/{oneof(*_WORD_SIZES)}/ immediate')
-def put_word(context, size, value):
-    return value.to_bytes(_WORD_SIZES[size], "little")
+@core.inst(fr'/{oneof(*_WORD_SIZES)}/ immediate*')
+def put_word(context, size, *values):
+    return b"".join(value.to_bytes(_WORD_SIZES[size], "little") for value in values)
+
+
+@core.inst(fr'/\.asciiz?/ ESCAPED_STRING')
+def put_string(context, ascii, string):
+    string = literal_eval(string)
+    return string.encode("ascii") + (b"\x00" if ascii == '.asciiz' else b"")
 
 
 @core.inst(r'".set" symbol immediate')
