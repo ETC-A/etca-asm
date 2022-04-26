@@ -10,7 +10,9 @@ etca_asm.extensions.import_all_extensions()
 ass = Assembler()
 
 res = ass.n_pass("""
+.org 0x400
 .half 'H' 'e' 'l' 'l' 'o' ',' ' ' 'W' 'o' 'r' 'l' 'd' '!'
+.org 0x420
 .align 2
 .ascii "Hello, World!"
 .align 4

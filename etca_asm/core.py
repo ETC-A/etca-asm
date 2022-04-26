@@ -10,7 +10,7 @@ from functools import partial
 from pathlib import Path
 from pprint import pformat
 from types import SimpleNamespace
-from typing import Callable, NamedTuple
+from typing import Callable, NamedTuple, Iterable
 
 from frozendict import frozendict
 from lark import Lark, Transformer, GrammarError
@@ -159,11 +159,11 @@ def balign(context, _, size, width, fill_value=None, max_jump=None):
     assert (context.ip + delta) % width == 0, (context.ip, delta, width)
     word_width = (2 ** context.register_sizes[size]) if size is not None else 1
     if max_jump is not None and max_jump < width:
-        return b""
+        return None
     elif fill_value is None:
         # TODO: This is a side effect in the context that isn't save with regards to ambiguities
         context.ip += delta
-        return b""
+        return None
     else:
         fv = fill_value.to_bytes(word_width, "little")
         return fv * (delta // word_width) + fv[:delta % word_width]
@@ -172,7 +172,18 @@ def balign(context, _, size, width, fill_value=None, max_jump=None):
 @core.inst(fr'/\.p2align/ size_postfix immediate')
 @core.inst(fr'/\.p2align/ size_postfix immediate "," [ immediate] ["," immediate]')
 def p2align(context, _, size, width, fill_value=None, max_jump=None):
-    return balign(context, _, size, 2**width, fill_value, max_jump)
+    return balign(context, _, size, 2 ** width, fill_value, max_jump)
+
+
+@core.inst(fr'".org" immediate ["," immediate]')
+def org(context, target, fill_value=None):
+    if fill_value is None:
+        context.ip = target
+        return None
+    else:
+        fv = fill_value.to_bytes(1, "little")
+        delta = target - context.ip
+        return fv * delta
 
 
 @core.inst(r'".set" symbol immediate')
@@ -274,19 +285,27 @@ class InstructionOutput(NamedTuple):
 @dataclass()
 class AssemblyResult:
     output: list[InstructionOutput]
+    fill_value: bytes = b"\x00"
 
-    def to_bytes(self, starting_at=0x8000) -> bytes:
-        out = bytearray()
-        ip = starting_at
+    def output_with_aligns(self, starting_at=None) -> Iterable[InstructionOutput]:
+        if starting_at is None:
+            if self.output:
+                ip = self.output[0].start_ip
+            else:
+                return
+        else:
+            ip = starting_at
         for i in self.output:
             if i.start_ip > ip:
-                out += b"\x00" * (i.start_ip - ip)
+                yield InstructionOutput(ip, self.fill_value * (i.start_ip - ip), "")
                 ip += (i.start_ip - ip)
             elif i.start_ip < ip:
                 raise ValueError("Instruction placed before earlier instruction", i, ip)
-            out += i.binary
+            yield i
             ip += len(i.binary)
-        return bytes(out)
+
+    def to_bytes(self, starting_at=None) -> bytes:
+        return b"".join(i.binary for i in self.output_with_aligns(starting_at))
 
 
 class Assembler:
