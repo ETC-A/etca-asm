@@ -311,11 +311,14 @@ class AssemblyResult:
 class Assembler:
     current_parser: Lark
 
-    def __init__(self, default_modes=None, available_extensions=None, logger: logging.Logger = None):
+    def __init__(self, verbosity=0, default_modes=None, available_extensions=None, logger: logging.Logger = None):
         self.context = Context()
         # Maybe these should be different loggers ?
         self.logger = logger or logging.getLogger(__name__)
-        self.setup_context(True, default_modes=default_modes, available_extensions=available_extensions)
+        self.setup_context(True,
+                           verbosity=verbosity,
+                           default_modes=default_modes,
+                           available_extensions=available_extensions)
         core.init(self.context)
         self.context.modes = default_modes or set()
 
@@ -362,7 +365,8 @@ class Assembler:
                     full_grammar += grammar + "\n"
                     grammar_builder.load_grammar(grammar, alias)
 
-        self.logger.debug(full_grammar)
+        if self.context.verbosity >= 5:
+            self.logger.debug(full_grammar)
         try:
             grammar = grammar_builder.build()
         except GrammarError as e:
@@ -372,9 +376,11 @@ class Assembler:
                                    start="instruction", propagate_positions=True)
 
     def handle_instruction(self, line):
-        self.logger.debug(f"Enabled extensions: {self.context.enabled_extensions}")
-        self.logger.debug(f"Active modes: {self.context.modes}")
-        self.logger.debug(pformat(self.context))
+        if self.context.verbosity >= 3:
+            self.logger.debug(f"Enabled extensions: {self.context.enabled_extensions}")
+            self.logger.debug(f"Active modes: {self.context.modes}")
+        if self.context.verbosity >= 4:
+            self.logger.debug(pformat(self.context))
         tree = self.current_parser.parse(line)
         if tree.data == "no_instruction":
             return
@@ -415,9 +421,11 @@ class Assembler:
 
     def single_pass(self, full_text: str):
         for line in full_text.splitlines(False):
-            self.logger.debug(f"Starting with line: {line!r}")
+            if self.context.verbosity >= 2:
+                self.logger.debug(f"Starting with line: {line!r}")
             self.handle_instruction(line)
-            self.logger.debug(f"Done with line    : {line!r}")
+            if self.context.verbosity >= 2:
+                self.logger.debug(f"Done with line    : {line!r}")
 
     def n_pass(self, full_text) -> AssemblyResult:
         start_context = copy.deepcopy(self.context)
