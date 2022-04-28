@@ -13,7 +13,7 @@ def assemble(in_file: str, out_file: str):
   if verbosity >= 5:
     logging.basicConfig(level='DEBUG')
 
-  worker=core.Assembler()
+  worker=core.Assembler(verbosity)
   worker.context.modes=modes
   worker.context.reload_extensions()
 
