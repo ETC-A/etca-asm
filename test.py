@@ -8,7 +8,7 @@ import etca_asm.extensions
 
 etca_asm.extensions.import_all_extensions()
 
-ass = Assembler()
+ass = Assembler(verbosity=10)
 
 res = ass.n_pass("""
 .org 0x400
@@ -24,6 +24,13 @@ res = ass.n_pass("""
 .word $
 .half 0xFF
 .word $
+.align 4
+.half 0xAB
+.half (0xCD)
+.half 0x10 + 0x13
+.half 0x2 * 0x3
+.half 0x10 / 0x7
+.half 0xA % 0x3
 .p2align 8 ,, 16
 """)
 
