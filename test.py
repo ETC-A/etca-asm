@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 from etca_asm.core import Assembler
 
 import etca_asm.core
@@ -20,7 +21,10 @@ res = ass.n_pass("""
 .align 8, 0xFF
 .utf8 "Äuglein 👀"
 .align 16
-.p2align 16 ,, 16
+.word $
+.half 0xFF
+.word $
+.p2align 8 ,, 16
 """)
 
 print(res.to_bytes().hex(' ', -2))

@@ -240,6 +240,8 @@ core.register_syntax('immediate', r'/[+-]?0x_?[0-9a-f]+(_[0-9a-f]+)*/i', lambda 
 
 core.register_syntax('immediate', r"/'([^'\\\n]|\\[^\n])'/", lambda _, x: ord(literal_eval(x)))
 
+core.register_syntax('immediate', r'/\$/', lambda c, _: c.ip)
+
 
 @core.register_syntax('immediate', 'symbol')
 def immediate_symbol(context, symbol):
