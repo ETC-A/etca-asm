@@ -148,21 +148,27 @@ def named_cr(context, name):
 
 
 @base.inst('"mov" size_postfix register_raw "," control_register')
-def mov_from_cr(context, _, reg, cr):
+def mov_from_cr(context, size, reg, cr):
+    if size == None:
+        size = ''
     return context.macro(f"""
-        mfcrx {reg}, {cr}
+        mfcr{size} {reg}, {cr}
     """)
 
 
 @base.inst('"mov" size_postfix control_register "," register_raw')
-def mov_to_cr(context, _, cr, reg):
+def mov_to_cr(context, size, cr, reg):
+    if size == None:
+        size = ''
     return context.macro(f"""
-        mtcrx {reg}, {cr}
+        mtcr{size} {reg}, {cr}
     """)
 
 
 @base.inst('"mov" size_postfix register_raw "," "[" (register_raw|immediate_raw) "]"')
 def mov_from_mem(context, size, dest, source):
+    if size == None:
+        size = ''
     return context.macro(f"""
         ld{size} {dest}, {source}
     """)
@@ -170,6 +176,8 @@ def mov_from_mem(context, size, dest, source):
 
 @base.inst('"mov" size_postfix "[" (register_raw|immediate_raw) "]" "," register_raw')
 def mov_to_mem(context, size, dest, source):
+    if size == None:
+        size = ''
     return context.macro(f"""
         st{size} {source}, {dest}
     """)
