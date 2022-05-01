@@ -254,7 +254,7 @@ def immediate_symbol(context, symbol):
     else:
         return value
 
-@core.register_syntax('expression_paren', '"(" expression_or | atom ")" | atom')
+@core.register_syntax('expression_paren', '"(" expression_or ")" | atom')
 def expr_paren(context, immediate: int):
     return immediate
 
