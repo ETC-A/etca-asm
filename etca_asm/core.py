@@ -261,47 +261,44 @@ def expr_paren(context, immediate: int):
 UNARY_OPERATIONS = {'~': lambda x: ~x, '!': lambda x: int(not x), '-': lambda x: -x, '+': lambda x: +x}
 
 @core.register_syntax('expression_unary', '/~|!|-|\+/ expression_paren')
-def expr_unary(context, *op_and_expr):
-    return UNARY_OPERATIONS[op_and_expr[0]](op_and_expr[1])
+def expr_unary(context, operator, expression):
+    return UNARY_OPERATIONS[operator](expression)
 
 MUL_OPERATIONS = {'*': lambda a, b: a * b, '/': lambda a, b: a // b, '%': lambda a, b: a % b}
 
 @core.register_syntax('expression_mul', '(expression_paren | expression_unary) (/\/|\*|%/ (expression_paren | expression_unary))*')
-def expr_mul(context, *ops_and_exprs):
-    acc = ops_and_exprs[0]
-    for op, expr in zip(ops_and_exprs[1::2], ops_and_exprs[2::2]):
+def expr_mul(context, acc, *ops_and_exprs):
+    for op, expr in zip(ops_and_exprs[::2], ops_and_exprs[1::2]):
         acc = MUL_OPERATIONS[op](acc, expr)
     return acc
 
 ADD_OPERATIONS = {'+': lambda a, b: a + b, '-': lambda a, b: a - b}
 
 @core.register_syntax('expression_add', 'expression_mul (/\+|-/ expression_mul)*')
-def expr_add(context, *ops_and_exprs):
-    acc = ops_and_exprs[0]
-    for op, expr in zip(ops_and_exprs[1::2], ops_and_exprs[2::2]):
+def expr_add(context, acc, *ops_and_exprs):
+    for op, expr in zip(ops_and_exprs[::2], ops_and_exprs[1::2]):
         acc = ADD_OPERATIONS[op](acc, expr)
     return acc
 
 SHIFT_OPERATIONS = {'<<': lambda a, b: a << b, '>>': lambda a, b: a >> b}
 
 @core.register_syntax('expression_shift', 'expression_add (/<<|>>/ expression_add)*')
-def expr_shift(context, *ops_and_exprs):
-    acc = ops_and_exprs[0]
-    for op, expr in zip(ops_and_exprs[1::2], ops_and_exprs[2::2]):
+def expr_shift(context, acc, *ops_and_exprs):
+    for op, expr in zip(ops_and_exprs[::2], ops_and_exprs[1::2]):
         acc = SHIFT_OPERATIONS[op](acc, expr)
     return acc
 
 @core.register_syntax('expression_and', 'expression_shift ("&"  expression_shift)*')
-def expr_and(context, *exprs):
-    return reduce(lambda a, b: a & b, exprs, -1)
+def expr_and(context, expr, *exprs):
+    return reduce(lambda a, b: a & b, exprs, expr)
 
 @core.register_syntax('expression_xor', 'expression_and ("^" expression_and)*')
-def expr_xor(context, *exprs):
-    return reduce(lambda a, b: a ^ b, exprs, 0)
+def expr_xor(context, expr, *exprs):
+    return reduce(lambda a, b: a ^ b, exprs, expr)
 
 @core.register_syntax('expression_or', 'expression_xor ("|" expression_xor)*')
-def expr_or(context, *exprs):
-    return reduce(lambda a, b: a | b, exprs, 0)
+def expr_or(context, expr, *exprs):
+    return reduce(lambda a, b: a | b, exprs, expr)
 
 
 class _CompileInstruction(Transformer):
