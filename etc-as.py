@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.10
+#!/usr/bin/env python3
 
 import etca_asm.core as core
 import etca_asm.base_isa as base
@@ -107,6 +107,10 @@ def print_version():
 def print_help():
   print(help_msg)
   exit()
+
+if sys.version_info[0:2] < (3, 10):
+    print('Python 3.10 or newer is required to run this')
+    exit()
 
 modes=set(['prefix'])
 mformat='annotated'

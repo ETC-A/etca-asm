@@ -1,7 +1,7 @@
 instruction: -> no_instruction
 instruction_raw: instruction
 
-NAME: /\w+/
+NAME: /\b[^\W0-9]\w*/
 _NOMATCH: /(?!_)_/
 
 %ignore WS_INLINE

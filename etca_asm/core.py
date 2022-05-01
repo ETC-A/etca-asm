@@ -6,7 +6,7 @@ import copy
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
-from functools import partial
+from functools import partial, reduce
 from pathlib import Path
 from pprint import pformat
 from types import SimpleNamespace
@@ -131,7 +131,7 @@ _WORD_SIZES = {
 
 @core.inst(fr'/{oneof(*_WORD_SIZES)}/ immediate*')
 def put_word(context, size, *values):
-    return b"".join(value.to_bytes(_WORD_SIZES[size], "little") for value in values)
+    return b"".join(value.to_bytes(_WORD_SIZES[size], "little", signed=value < 0) for value in values)
 
 
 encodings = {
@@ -165,7 +165,7 @@ def balign(context, _, size, width, fill_value=None, max_jump=None):
         context.ip += delta
         return None
     else:
-        fv = fill_value.to_bytes(word_width, "little")
+        fv = fill_value.to_bytes(word_width, "little", signed=fill_value < 0)
         return fv * (delta // word_width) + fv[:delta % word_width]
 
 
@@ -181,7 +181,7 @@ def org(context, target, fill_value=None):
         context.ip = target
         return None
     else:
-        fv = fill_value.to_bytes(1, "little")
+        fv = fill_value.to_bytes(1, "little", signed=fill_value < 0)
         delta = target - context.ip
         return fv * delta
 
@@ -233,15 +233,19 @@ def enable_extension(context, *names: str):
     context.reload_extensions()
 
 
-core.register_syntax('immediate', r'/[+-]?[0-9]+(_[0-9]+)*/', lambda _, x: int(str(x), 10))
-core.register_syntax('immediate', r'/[+-]?0[bB]_?[01]+(_[01]+)*/', lambda _, x: int(x[2:].removeprefix('_'), 2))
-core.register_syntax('immediate', r'/[+-]?0[oO]_?[0-7]+(_[0-7]+)*/', lambda _, x: int(x[2:].removeprefix('_'), 8))
-core.register_syntax('immediate', r'/[+-]?0x_?[0-9a-f]+(_[0-9a-f]+)*/i', lambda _, x: int(x[2:].removeprefix('_'), 16))
+core.register_syntax('atom', r'/[+-]?[0-9]+(_[0-9]+)*/', lambda _, x: int(str(x), 10))
+core.register_syntax('atom', r'/[+-]?0[bB]_?[01]+(_[01]+)*/', lambda _, x: int(x[2:].removeprefix('_'), 2))
+core.register_syntax('atom', r'/[+-]?0[oO]_?[0-7]+(_[0-7]+)*/', lambda _, x: int(x[2:].removeprefix('_'), 8))
+core.register_syntax('atom', r'/[+-]?0x_?[0-9a-f]+(_[0-9a-f]+)*/i', lambda _, x: int(x[2:].removeprefix('_'), 16))
 
-core.register_syntax('immediate', r"/'([^'\\\n]|\\[^\n])'/", lambda _, x: ord(literal_eval(x)))
+core.register_syntax('atom', r"/'([^'\\\n]|\\[^\n])'/", lambda _, x: ord(literal_eval(x)))
+
+core.register_syntax('atom', r'/\$/', lambda c, _: c.ip)
+
+core.register_syntax('immediate', 'expression_or', lambda _, x: x)
 
 
-@core.register_syntax('immediate', 'symbol')
+@core.register_syntax('atom', 'symbol')
 def immediate_symbol(context, symbol):
     value = context.resolve_symbol(symbol)
     if value is None:
@@ -249,6 +253,52 @@ def immediate_symbol(context, symbol):
         return 0
     else:
         return value
+
+@core.register_syntax('expression_paren', '"(" expression_or ")" | atom')
+def expr_paren(context, immediate: int):
+    return immediate
+
+UNARY_OPERATIONS = {'~': lambda x: ~x, '!': lambda x: int(not x), '-': lambda x: -x, '+': lambda x: +x}
+
+@core.register_syntax('expression_unary', '/~|!|-|\+/ expression_paren')
+def expr_unary(context, operator, expression):
+    return UNARY_OPERATIONS[operator](expression)
+
+MUL_OPERATIONS = {'*': lambda a, b: a * b, '/': lambda a, b: a // b, '%': lambda a, b: a % b}
+
+@core.register_syntax('expression_mul', '(expression_paren | expression_unary) (/\/|\*|%/ (expression_paren | expression_unary))*')
+def expr_mul(context, acc, *ops_and_exprs):
+    for op, expr in zip(ops_and_exprs[::2], ops_and_exprs[1::2]):
+        acc = MUL_OPERATIONS[op](acc, expr)
+    return acc
+
+ADD_OPERATIONS = {'+': lambda a, b: a + b, '-': lambda a, b: a - b}
+
+@core.register_syntax('expression_add', 'expression_mul (/\+|-/ expression_mul)*')
+def expr_add(context, acc, *ops_and_exprs):
+    for op, expr in zip(ops_and_exprs[::2], ops_and_exprs[1::2]):
+        acc = ADD_OPERATIONS[op](acc, expr)
+    return acc
+
+SHIFT_OPERATIONS = {'<<': lambda a, b: a << b, '>>': lambda a, b: a >> b}
+
+@core.register_syntax('expression_shift', 'expression_add (/<<|>>/ expression_add)*')
+def expr_shift(context, acc, *ops_and_exprs):
+    for op, expr in zip(ops_and_exprs[::2], ops_and_exprs[1::2]):
+        acc = SHIFT_OPERATIONS[op](acc, expr)
+    return acc
+
+@core.register_syntax('expression_and', 'expression_shift ("&"  expression_shift)*')
+def expr_and(context, expr, *exprs):
+    return reduce(lambda a, b: a & b, exprs, expr)
+
+@core.register_syntax('expression_xor', 'expression_and ("^" expression_and)*')
+def expr_xor(context, expr, *exprs):
+    return reduce(lambda a, b: a ^ b, exprs, expr)
+
+@core.register_syntax('expression_or', 'expression_xor ("|" expression_xor)*')
+def expr_or(context, expr, *exprs):
+    return reduce(lambda a, b: a | b, exprs, expr)
 
 
 class _CompileInstruction(Transformer):
@@ -382,6 +432,8 @@ class Assembler:
         if self.context.verbosity >= 4:
             self.logger.debug(pformat(self.context))
         tree = self.current_parser.parse(line)
+        if self.context.verbosity >= 4:
+            self.logger.debug(f"Tree: \n{tree.pretty()}")
         if tree.data == "no_instruction":
             return
         options = CollapseAmbiguities().transform(tree)
