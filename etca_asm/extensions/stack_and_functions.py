@@ -1,7 +1,7 @@
 from etca_asm.core import Extension, reject, oneof
 from etca_asm.base_isa import CONDITION_NAMES, validate_registers, build
 
-functions = Extension(2, "functions", "Stack and Functions")
+functions = Extension(1, "functions", "Stack and Functions")
 Register = tuple[int | None, int]
 
 REGISTERS = {
