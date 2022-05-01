@@ -245,7 +245,7 @@ core.register_syntax('atom', r'/\$/', lambda c, _: c.ip)
 core.register_syntax('immediate', 'expression_or', lambda _, x: x)
 
 
-@core.register_syntax('immediate', 'symbol')
+@core.register_syntax('atom', 'symbol')
 def immediate_symbol(context, symbol):
     value = context.resolve_symbol(symbol)
     if value is None:

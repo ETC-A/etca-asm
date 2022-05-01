@@ -26,6 +26,9 @@ res = ass.n_pass("""
 .half 0xFF
 .word $
 .align 4
+testing:
+.word testing
+.align 4
 .half 0xAB
 .half (0xCD)
 .half 0x10 + 0x13
