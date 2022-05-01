@@ -242,7 +242,6 @@ core.register_syntax('immediate', r"/'([^'\\\n]|\\[^\n])'/", lambda _, x: ord(li
 
 core.register_syntax('immediate', r'/\$/', lambda c, _: c.ip)
 core.register_syntax('immediate', 'expression_add', lambda _, x: x)
-core.register_syntax('immediate', 'expression_sub', lambda _, x: x)
 
 
 @core.register_syntax('immediate', 'symbol')
@@ -254,61 +253,29 @@ def immediate_symbol(context, symbol):
     else:
         return value
 
-@core.register_syntax('expression_paren', '"(" expression_add ")"')
-@core.register_syntax('expression_paren', '"(" expression_sub ")"')
-@core.register_syntax('expression_paren', '"(" immediate ")"')
-@core.register_syntax('expression_paren', 'immediate')
+@core.register_syntax('expression_paren', '"(" expression_add | immediate ")" | immediate')
 def expr_paren(context, immediate: int):
     return immediate
 
-@core.register_syntax('expression_mul', 'expression_paren ("*" expression_paren)*')
-@core.register_syntax('expression_mul', 'expression_div ("*" expression_paren)+')
-@core.register_syntax('expression_mul', 'expression_rem ("*" expression_paren)+')
-def expr_mul(context, *immediates: int):
-    return reduce(lambda a, b: a * b, immediates, 1)
+MUL_OPERATIONS = {'*': lambda a, b: a * b, '/': lambda a, b: a // b, '%': lambda a, b: a % b}
 
-@core.register_syntax('expression_div', 'expression_paren ("/" expression_paren)+')
-@core.register_syntax('expression_div', 'expression_mul ("/" expression_paren)+')
-@core.register_syntax('expression_div', 'expression_rem ("/" expression_paren)+')
-def expr_div(context, *immediates: int):
-    print(immediates)
-    return reduce(lambda a, b: a // b, immediates[1:], immediates[0])
+@core.register_syntax('expression_mul', 'expression_paren (/\/|\*|%/ expression_paren)*')
+def expr_mul(context, *args):
+    print(args)
+    acc = args[0]
+    for op, arg in zip(args[1::2], args[2::2]):
+        acc = MUL_OPERATIONS[op](acc, arg)
+    return acc
 
-@core.register_syntax('expression_rem', 'expression_paren ("%" expression_paren)+')
-@core.register_syntax('expression_rem', 'expression_mul ("%" expression_paren)+')
-@core.register_syntax('expression_rem', 'expression_div ("%" expression_paren)+')
-def expr_rem(context, *immediates: int):
-    return reduce(lambda a, b: a % b, immediates[1:], immediates[0])
+ADD_OPERATIONS = {'+': lambda a, b: a + b, '-': lambda a, b: a - b}
 
-@core.register_syntax('expression_add', 'expression_mul ("+" expression_mul)*')
-@core.register_syntax('expression_add', 'expression_div ("+" expression_mul)*')
-@core.register_syntax('expression_add', 'expression_rem ("+" expression_mul)*')
-@core.register_syntax('expression_add', 'expression_mul ("+" expression_div)+')
-@core.register_syntax('expression_add', 'expression_div ("+" expression_div)+')
-@core.register_syntax('expression_add', 'expression_rem ("+" expression_div)+')
-@core.register_syntax('expression_add', 'expression_mul ("+" expression_rem)+')
-@core.register_syntax('expression_add', 'expression_div ("+" expression_rem)+')
-@core.register_syntax('expression_add', 'expression_rem ("+" expression_rem)+')
-@core.register_syntax('expression_add', 'expression_sub ("+" expression_mul)+')
-@core.register_syntax('expression_add', 'expression_sub ("+" expression_div)+')
-@core.register_syntax('expression_add', 'expression_sub ("+" expression_rem)+')
-def expr_add(context, *immediates: int):
-    return sum(immediates)
+@core.register_syntax('expression_add', 'expression_mul (/\+|-/ expression_mul)*')
+def expr_add(context, *args):
+    acc = args[0]
+    for op, arg in zip(args[1::2], args[2::2]):
+        acc = ADD_OPERATIONS[op](acc, arg)
+    return acc
 
-@core.register_syntax('expression_sub', 'expression_mul ("-" expression_mul)+')
-@core.register_syntax('expression_sub', 'expression_div ("-" expression_mul)+')
-@core.register_syntax('expression_sub', 'expression_rem ("-" expression_mul)+')
-@core.register_syntax('expression_sub', 'expression_mul ("-" expression_div)+')
-@core.register_syntax('expression_sub', 'expression_div ("-" expression_div)+')
-@core.register_syntax('expression_sub', 'expression_rem ("-" expression_div)+')
-@core.register_syntax('expression_sub', 'expression_mul ("-" expression_rem)+')
-@core.register_syntax('expression_sub', 'expression_div ("-" expression_rem)+')
-@core.register_syntax('expression_sub', 'expression_rem ("-" expression_rem)+')
-@core.register_syntax('expression_sub', 'expression_add ("-" expression_mul)+')
-@core.register_syntax('expression_sub', 'expression_add ("-" expression_div)+')
-@core.register_syntax('expression_sub', 'expression_add ("-" expression_rem)+')
-def expr_sub(context, *immediates: int):
-    return reduce(lambda a, b: a - b, immediates[1:], immediates[0])
 
 class _CompileInstruction(Transformer):
     def __init__(self, context, line):
