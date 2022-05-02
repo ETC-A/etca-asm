@@ -30,7 +30,8 @@ def mov_large_immediate(context, reg, imm):
     bit_groups = split_into_bit_groups(imm)
     instructions = []
 
-    if imm < 0:
+    # comparison is done with 16 instead of 0 so that 0-15 get mapped to movs instead of movz
+    if imm < 16:
         # remove unneeded bit groups
         while len(bit_groups) > 1 and bit_groups[0] & 0x1F == 0x1F and bit_groups[1] & 0x10 != 0:
             bit_groups.pop(0)
