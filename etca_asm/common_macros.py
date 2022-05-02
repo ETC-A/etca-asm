@@ -7,40 +7,42 @@ def sign_extend(value, bits):
     sign_bit = 1 << (bits - 1)
     return (value & (sign_bit - 1)) - (value & sign_bit)
 
+def split_into_bit_groups(imm):
+    groups = []
+    for i in range(60, -1, -5):
+        groups.append((imm >> i) & 0x1F)
+    return groups
 
-@common_macros.inst('/mov/ register_raw "," immediate')
-def mov_large_immediate(context, _, reg, imm):
-    reject(not (-0x8000 <= imm <= 0xFFFF))
-    imm = imm & 0xFFFF
-    if imm < 2**4 or imm > 2 ** 16 - 2 ** 4:
-        return context.macro(f"""
-            movsx {reg}, {sign_extend(imm, 5)}
-        """)
-    elif 0 <= imm < 2 ** 5:
-        return context.macro(f"""
-            movzx {reg}, {imm}
-        """)
-    elif imm < 2 ** 9 or imm > 2 ** 16 - 2 ** 9:
-        return context.macro(f"""
-            movsx {reg}, {sign_extend((imm & 0b11_1110_0000) >> 5, 5)}
-            slox {reg}, {(imm & 0b00_0001_1111) >> 0}
-        """)
-    elif not bool(imm & 0x8000) and bool(imm & 0x4000):
-        return context.macro(f"""
-            movzx {reg}, {(imm & 0b0111_1100_0000_0000) >> 10}
-            slox {reg}, {(imm & 0b0000_0011_1110_0000) >> 5}
-            slox {reg}, {(imm & 0b0000_0000_0001_1111) >> 0}
-        """)
-    elif bool(imm & 0x8000) != bool(imm & 0x4000):
-        return context.macro(f"""
-            movzx {reg}, {(imm & 0b1000_0000_0000_0000) >> 15}
-            slox {reg}, {(imm & 0b0111_1100_0000_0000) >> 10}
-            slox {reg}, {(imm & 0b0000_0011_1110_0000) >> 5}
-            slox {reg}, {(imm & 0b0000_0000_0001_1111) >> 0}
-        """)
+@common_macros.inst('"mov" register_raw "," immediate')
+def mov_large_immediate(context, reg, imm):
+    reject_msg = f'Immediate is too large to fit in a register: {imm}'
+    if -2**15 <= imm <= 2**16 - 1:
+        size = 'x'
+    elif -2**31 <= imm <= 2**32 - 1:
+        reject(not any(map(lambda x: x.strid == 'dword_operations', context.enabled_extensions)), reject_msg)
+        size = 'd'
+    elif -2**63 <= imm <= 2**64 - 1:
+        reject(not any(map(lambda x: x.strid == 'qword_operations', context.enabled_extensions)), reject_msg)
+        size = 'q'
     else:
-        return context.macro(f"""
-            movsx {reg}, {sign_extend((imm & 0b0111_1100_0000_0000) >> 10, 5)}
-            slox {reg}, {(imm & 0b0000_0011_1110_0000) >> 5}
-            slox {reg}, {(imm & 0b0000_0000_0001_1111) >> 0}
-        """)
+        reject(reject_msg)
+    
+    bit_groups = split_into_bit_groups(imm)
+    instructions = []
+
+    if imm < 0:
+        # remove unneeded bit groups
+        while len(bit_groups) > 1 and bit_groups[0] & 0x1F == 0x1F and bit_groups[1] & 0x10 != 0:
+            bit_groups.pop(0)
+        bit_groups[0] = sign_extend(bit_groups[0], 5)
+        instructions.append(f'movs{size} {reg}, {bit_groups.pop(0)}')
+    else:
+        # remove unneeded bit groups
+        while len(bit_groups) > 1 and bit_groups[0] == 0:
+            bit_groups.pop(0)
+        instructions.append(f'movz{size} {reg}, {bit_groups.pop(0)}')
+
+    for group in bit_groups:
+        instructions.append(f'slo{size} {reg}, {group}')
+
+    return context.macro('\n'.join(instructions))
