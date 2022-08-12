@@ -1,7 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.10
 import argparse
 import fnmatch
 import shlex
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -11,7 +12,7 @@ from dataclasses import dataclass
 
 def parse_args(args):
     parser = argparse.ArgumentParser()
-    parser.add_argument("-c", "--command", action="store", default="python3 etc-as.py",
+    parser.add_argument("-c", "--command", action="store", default="python3.10 etc-as.py",
                         help="The assembler to test")
     parser.add_argument("-i", "--include", action="append",
                         help="A glob-like pattern of which golden tests to include")
@@ -106,7 +107,8 @@ def main(args):
                     expected = path.read_bytes()
                     got = tmp.read_bytes()
                     if expected != got:
-                        print(f"Output {mode} for {test_case.name} did not match expected")
+                        print(f"Output {mode} for {test_case.name} did not match expected, creating .fail file")
+                        shutil.move(tmp, path.with_suffix(path.suffix + ".fail"))
 
 
 if sys.version_info[0:2] < (3, 10):
