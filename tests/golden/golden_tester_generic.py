@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 def parse_args(args):
     parser = argparse.ArgumentParser()
-    parser.add_argument("-c", "--command", action="store", default="python3 etc-as.py",
+    parser.add_argument("-c", "--command", action="store", default="python3.10 etc-as.py",
                         help="The assembler to test")
     parser.add_argument("-i", "--include", action="append",
                         help="A glob-like pattern of which golden tests to include")
