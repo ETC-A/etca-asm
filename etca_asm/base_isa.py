@@ -207,10 +207,14 @@ def base_jumps(context, inst: str, symbol: str):
     op = CONDITION_NAMES[inst]
     target = context.resolve_symbol(symbol)
     if target is None:
-        offset = 0
-    else:
-        offset = target - context.ip
-    reject(not (-256 <= offset < 256))
+        target = context.ip
+    
+    offset = target - context.ip
+    reject(not (-256 <= offset < 256),
+        f"""Cannot encode near jump:
+    from `{inst} {symbol}' at 0x{context.ip:04x}
+    to `{symbol}' resolved to 0x{target:04x}"""
+    )
     return build((0b100, 3), (offset < 0, 1), (op, 4), (offset & 0xFF, 8))
 
 

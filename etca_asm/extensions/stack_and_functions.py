@@ -73,14 +73,13 @@ def cond_abs_reg_call(cxt, inst: str, reg: Register):
 def rel_near_imm_call(cxt, lbl: str):
     target = cxt.resolve_symbol(lbl)
     if target is None:
-        offset = 0
-    else:
-        offset = target - cxt.ip
+        target = cxt.ip
+    offset = target - cxt.ip
     bottom_mask = 0xfff
     reject(
         offset < -2048 or offset > 2047,
         f"""Cannot encode near call:
     from `call {lbl}'     at 0x{cxt.ip:04x}
-    to   `{lbl}' resolved to 0x{offset:04x}"""
+    to   `{lbl}' resolved to 0x{target:04x}"""
     )
     return build((0xB,4), (bottom_mask & offset, 12))
