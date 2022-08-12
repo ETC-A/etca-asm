@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+shopt -s extglob
+
+ETC_AS=etc-as
+
+check_python310_install() {
+    which python3.10 $> /dev/null \
+        || fatal "Must have python3.10 installed. Try the `make deps` target that came with etc-as."
+}
+
+INSTALL_BIN="$(cd "$(dirname "$0")" && pwd)"
+INSTALL_LIB="$(dirname "$INSTALL_BIN")/lib/$ETC_AS"
+
+run_etcas() {
+    python3.10 "$INSTALL_LIB/etc-as.py" "$@"
+}
+
+if [[ $# -eq 0 ]] ; then
+    set -- "--help"
+fi
+
+if [[ "${1:-}" == 'version' ]] || [[ "${1:-}" == '--version' ]] ; then
+    echo "$0"
+    cat  "$INSTALL_LIB"/version
+    exit 0
+fi
+
+run_etcas "$@"
