@@ -29,7 +29,7 @@ if [[ $# -eq 0 ]] ; then
     set -- "--help"
 fi
 
-if [[ "${1:-}" == 'version' ]] || [[ "${1:-}" == '--version' ]] ; then
+if [[ "${1:-}" == '-V' ]] || [[ "${1:-}" == '--version' ]] ; then
     echo "$0"
     cat  "$INSTALL_LIB"/version
     exit 0
