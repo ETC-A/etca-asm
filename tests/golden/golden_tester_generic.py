@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 def parse_args(args):
     parser = argparse.ArgumentParser()
-    parser.add_argument("-c", "--command", action="store", default="python3.10 etc-as.py",
+    parser.add_argument("-c", "--command", action="store", default="python3 etc-as.py",
                         help="The assembler to test")
     parser.add_argument("-i", "--include", action="append",
                         help="A glob-like pattern of which golden tests to include")
@@ -107,6 +107,11 @@ def main(args):
                     got = tmp.read_bytes()
                     if expected != got:
                         print(f"Output {mode} for {test_case.name} did not match expected")
+
+
+if sys.version_info[0:2] < (3, 10):
+    print('Python 3.10 or newer is required to run this')
+    exit(code=1)
 
 
 if __name__ == '__main__':
