@@ -26,7 +26,7 @@ from the lovely people at deadsnakes. Then it will install the needed packages t
 ### One-Time Installation
 
 From this repository, run `make build && sudo make install`.
-This will install `etc-as` to your machine. Not that it will install whatever you cloned from github -
+This will install `etc-as` to your machine. Note that it will install whatever you cloned from github -
 you'll need to `git pull` first if you want to install updates from our repository.
 
 Afterwards, you should be able to run `etc-as` from any folder to see help text.
