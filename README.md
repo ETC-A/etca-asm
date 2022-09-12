@@ -25,7 +25,8 @@ from the lovely people at deadsnakes. Then it will install the needed packages t
 
 ### One-Time Installation
 
-From this repository, run `sudo make install`. This will install the `etc-as` as downloaded to your machine.
+From this repository, run `make build && sudo make install`.
+This will install the `etc-as` as downloaded to your machine.
 Afterwards, you should be able to run `etc-as` from any folder to see help text.
 
 ## Usage
