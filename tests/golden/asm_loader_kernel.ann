@@ -1,0 +1,1484 @@
+0x8000:                               # .set STREAM 1
+0x8000:                               # .set MODEQ 2
+0x8000:                               # .set OUTPUT 3
+0x8000:                               # .set SRCLINENO_OFS     -6
+0x8000:                               # .set RELOC_TAB_TOP_OFS -4
+0x8000:                               # .set RELOC_TAB_BOT_OFS -2
+0x8000:                               # .set SYMTAB_ROOT_OFS    2
+0x8000:                               # .set SYMTAB_END_OFS     4
+0x8000:                               # .set EOL_CHAR_OFS       6
+0x8000:                               # .set STATIC_DATA_PTR    0xC010
+0x8000:                               # .set INIT_SYMTAB_ROOT   0xC020
+0x8000:                               # .set INIT_STK_PTR       0xFFFE   ; word-aligned, I don't think we ever need to put 32-bit data on the stack
+0x8000:                               # .set INIT_OBJ_STK_PTR   0x7FFC   ; dword-aligned, as that is the promise we make to the object program
+0x8000:                               # .set BUFFER_PTR         0x0020
+0x8000:                               # .set CODE_SEGMENT       0x0030
+0x8000:                               # .set RELOC_TAB_TOP      0x8000   ; past the end
+0x8000: b0 4c                         #             call    _start
+0x8002:                               # object_return_stub:
+0x8002: 59 00                         #             mov     %r0, 0                  ; SYSCALL_EXIT
+0x8004: 59 20                         #             mov     %r1, 0                  ; STATUS_OK
+0x8006:                               # syscall:
+0x8006: 43 04                         #             cmph    %r0, 4                  ; biggest known syscall is 4.
+0x8008: 88 0a                         #             jbe     good_service_no         ; service <= 4? if yes, keep going. Otherwise, exit 140
+0x800a: 59 00                         #             mov     %r0, 0
+0x800c: 58 24 5c 2c                   #             mov     %r1, 140                ; exit code 140, SIGSYS
+0x8010: 9e f6                         #             jmp     syscall
+0x8012:                               # good_service_no:
+0x8012: 57 c1                         #             testx   %sp, 1                  ; test the bottom stack bit. The ABI requires that this
+0x8014: 80 0c                         #             jz      aligned_stack           ; crash the program with code 139 (segfault) if it's on
+0x8016: 56 de                         #             andx    %sp, -2                 ; align the stack so that we don't weirdloop
+0x8018: 59 00                         #             mov     %r0, 0
+0x801a: 58 24 5c 2b                   #             mov     %r1, 139
+0x801e: 9e e8                         #             jmp syscall
+0x8020:                               # aligned_stack:
+0x8020: 1b f8                         #             stx     %ln, %sp                ; the stack is now guaranteed to be aligned. Save %ln.
+0x8022: 58 e1 5c f0 5c e0 5c ea       #             mov     %ln, 0xC00A             ; &static_data->user_sp
+0x802a: 1b dc                         #             stx     %sp, %ln                ; static_data->user_sp = %sp
+0x802c: 1a f8                         #             ldx     %ln, %sp                ; restore our return address
+0x802e: 58 c1 5c df 5c df 5c de       #             mov     %sp, INIT_STK_PTR       ; initialize our own stack
+0x8036: 1d dc                         #             pushx   %ln                     ; and save our return address there.
+0x8038: b0 0c                         #             call    syscall_with_table      ; get the syscall table
+0x803a: b4 89 ec 89 ec 89 14 8a 1a 8a #             .word   syscall_exit syscall_putuint syscall_putsint syscall_puts syscall_sbrk
+0x8044:                               # syscall_with_table:
+0x8044: 00 00                         #             addh    %r0, %r0                ; service_no *= sizeof(word)
+0x8046: 10 e0                         #             addx    %ln, %r0                ; offset into the syscall table
+0x8048: 1a fc                         #             ldx     %ln, %ln                ; load the system function to call
+0x804a: af ee                         #             jmp     %ln                     ; invoke it
+0x804c:                               # _start:
+0x804c: 58 a1 5c b0 5c a0 5c b0       #             mov     %r5, STATIC_DATA_PTR
+0x8054: 58 c1 5c df 5c df 5c de       #             mov     %r6, INIT_STK_PTR
+0x805c: 58 10                         #             movz    %r0, 16
+0x805e: 10 14                         #             addx    %r0, %r5                ; INIT_SYMTAB_ROOT is STATIC_DATA_PTR+16
+0x8060: 19 34                         #             movx    %r1, %r5
+0x8062: 50 22                         #             addx    %r1, 2                  ; &static_data.symtab_root
+0x8064: 1b 04                         #             stx     %r0, %r1
+0x8066: 50 22                         #             addx    %r1, 2
+0x8068: 1b 04                         #             stx     %r0, %r1                ; static_data->symtab_root = static_data->symtab_end = STATIC_DATA_PTR+16
+0x806a: 51 26                         #             sub     %r1, 6                  ; &static_data.reloc_tab_bot
+0x806c: 58 01 5c 00 5c 00 5c 00       #             mov     %r0, RELOC_TAB_TOP
+0x8074: 1b 04                         #             stx     %r0, %r1                ; static_data->reloc_tab_bot = RELOC_TAB_TOP
+0x8076: 51 22                         #             sub     %r1, 2                  ; &static_data.reloc_tab_top
+0x8078: 1b 04                         #             stx     %r0, %r1                ; static_data->reloc_tab_top = RELOC_TAB_TOP
+0x807a: 51 22                         #             sub     %r1, 2                  ; &static_data.src_lineno
+0x807c: 59 01                         #             mov     %r0, 1                  ; initial line is line 1
+0x807e: 1b 04                         #             stx     %r0, %r1                ; static_data->src_lineno = 1
+0x8080: 58 01 5c 10                   #             mov     %r0, CODE_SEGMENT       ; initial code segment ip
+0x8084: 1b 14                         #             stx     %r0, %r5                ; static_data->asm_ip = CODE_SEGMENT
+0x8086: b1 0e                         #             call    assemble_fp
+0x8088: b1 34                         #             call    assemble_sp
+0x808a: b0 0a                         #             call    get_start_stub
+0x808c: 5f 73 74 61 72 74 00          #             .asciiz "_start"
+0x8093: 00                            # 
+0x8094:                               # get_start_stub:
+0x8094: 19 1c                         #             movx    %r0, %ln                ; arg 0 = "_start"
+0x8096: b0 8e                         #             call    find_table_entry        ; find (or create, boo) a table entry for "_start"
+0x8098: b1 b8                         #             call    sp_get_symbol           ; xlookup the address for _start
+0x809a: 1d c0                         #             pushx   %r0                     ; stash that while we clean up
+0x809c: 58 01 5c 02 5c 14 5c 04       #             mov     %r0, completed_assembly_msg
+0x80a4: 58 e1 5c e2 5c ed 5c ec       #             mov     %ln, puts
+0x80ac: af fe                         #             call    %ln                     ; inform the user that their program is starting soon
+0x80ae: 58 e1 5c e0 5c e0 5c e2       #             mov     %ln, object_return_stub
+0x80b6: 59 04                         #             mov     %r0, 4                  ; syscall - object return stub
+0x80b8: 10 1c                         #             addx    %r0, %ln                ; r0 = syscall
+0x80ba: 1c 38                         #             popx    %r1                     ; reload address of _start to prepare transfer of control
+0x80bc: 58 df 5c df 5c dc             #             mov     %sp, INIT_OBJ_STK_PTR   ; initialize the object program stack pointer
+0x80c2: 59 40                         #             mov     %r2, 0
+0x80c4: 59 60                         #             mov     %r3, 0
+0x80c6: 59 80                         #             mov     %r4, 0
+0x80c8: 59 a0                         #             mov     %r5, 0
+0x80ca: af 2e                         #             jmp     %r1                     ; give control to the object program!
+0x80cc:                               # shr5:
+0x80cc: 1d c8                         #             pushx   %r2      ; having separated vaneers like this is fewer instructions
+0x80ce: 58 50                         #             movzx   %r2, 16  ; I have optimized for the placement of shr4 here.
+0x80d0: 10 48                         #             addx    %r2, %r2        ; 16 + 16 = 32
+0x80d2: 8e 06                         #             jmp     shr_L1
+0x80d4:                               # shr4:
+0x80d4: 1d c8                         #             pushx   %r2
+0x80d6: 58 50                         #             movzx   %r2, 16
+0x80d8:                               # shr_L1:
+0x80d8: 1d cc                         #             pushx   %r3
+0x80da: 29 60                         #             movd    %r3, %r0        ; move x to r3
+0x80dc: 1d d0                         #             pushx   %r4
+0x80de: 59 81                         #             mov     %r4, 1          ; b = 1
+0x80e0: 15 00                         #             xor     %r0, %r0        ; clear r0 (it holds 'r')
+0x80e2:                               # shr_L2:                             ; top of shr loop
+0x80e2: 27 4c                         #             testd   %r2, %r3        ; test mask & x
+0x80e4: 80 04                         #             jz      shr_L3          ; don't set bit of r if !(mask & x)
+0x80e6: 24 10                         #             ord     %r0, %r4        ; r |= b if mask & x, shifts that bit over
+0x80e8:                               # shr_L3:
+0x80e8: 20 48                         #             addd    %r2, %r2        ; mask <<= 1
+0x80ea: 23 4c                         #             cmpd    %r2, %r3        ; mask >? x
+0x80ec: 89 08                         #             ja      shr_L4          ; if yes, further testds will fail and we can quit.
+0x80ee: 20 90                         #             addd    %r4, %r4        ; b <<= 1
+0x80f0: 41 21                         #             subh    %r1, 1          ; --width
+0x80f2: 91 f0                         #             jnz     shr_L2          ; loop if width != 0
+0x80f4:                               # shr_L4:
+0x80f4: 1c 98                         #             pop     %r4             ; now r0 has the result
+0x80f6: 1c 78                         #             pop     %r3               ; so we can unwind
+0x80f8: 1c 58                         #             pop     %r2
+0x80fa: af ee                         #             ret
+0x80fc:                               # shl_L1:
+0x80fc: 20 00                         #             addd    %r0, %r0        ; x <<= 1
+0x80fe:                               # shl:
+0x80fe: 41 21                         #             subh    %r1, 1          ; --shamt
+0x8100: 93 fc                         #             jnn     shl_L1          ; exec loop if --shamt >= 0 === shamt > 0
+0x8102: af ee                         #             ret
+0x8104:                               # strncmp:
+0x8104: 1d cc                         #             pushx   %r3             ; wind stack, giving two free registers
+0x8106: 1d d0                         #             pushx   %r4             ; which we will use to hold *a and *b
+0x8108:                               # strncmp_L1:                         ; top of loop
+0x8108: 0a 60                         #             ldh     %r3, %r0        ; r3 = *a
+0x810a: 0a 84                         #             ldh     %r4, %r1        ; r4 = *b
+0x810c: 01 8c                         #             subh    %r4, %r3        ; subtract *a from *b
+0x810e: 81 0e                         #             jne     strncmp_L2      ; return if *a != *b
+0x8110: 47 7f                         #             testh   %r3, -1         ; test *a
+0x8112: 80 0a                         #             jz      strncmp_L2      ; also return if *a == 0 (note *b - *a still in %r4)
+0x8114: 60 01                         #             addd    %r0, 1          ; ++a
+0x8116: 60 21                         #             addd    %r1, 1          ; ++b
+0x8118: 61 41                         #             subd    %r2, 1          ; --n
+0x811a: 9d ee                         #             jg      strncmp_L1      ; if n is > 0, loop
+0x811c:                               # strncmp_L2:                         ; return label
+0x811c: 09 10                         #             movh    %r0, %r4        ; return value is *b - *a
+0x811e: 1c 98                         #             popx    %r4             ; unwind stack
+0x8120: 1c 78                         #             popx    %r3
+0x8122: af ee                         #             ret
+0x8124:                               # find_table_entry:
+0x8124: 1d dc                         #             pushx   %ln                 ; we call functions so we have to save this
+0x8126: 19 74                         #             movx    %r3, %r5            ; copy &static_data
+0x8128: 50 62                         #             addx    %r3, SYMTAB_ROOT_OFS; r3 = &static_data.symtab_root
+0x812a: 1a 2c                         #             ldx     %r1, %r3            ; r1 = static_data->symtab_root
+0x812c: 50 62                         #             addx    %r3, 2              ; r3 = &static_data.symtab_end
+0x812e: 1a 6c                         #             ldx     %r3, %r3            ; r3 = static_data->symtab_end
+0x8130: 8e 1c                         #             jmp     find_table_entry_L3
+0x8132:                               # find_table_entry_L1:                    ; loop top
+0x8132: 58 50                         #             movz    %r2, 16             ; third argument = 16, first two are already name,ste
+0x8134: 1d c0                         #             pushx   %r0                 ; save name
+0x8136: 1d c4                         #             pushx   %r1                 ; save ste
+0x8138: bf cc                         #             call    strncmp             ; r0 = !(name `streq` ste->symbol), r1 = r1 + N, r2 = r2 - N
+0x813a: 57 1f                         #             test    %r0, -1             ; set Z flag if (name `streq` ste->symbol)
+0x813c: 1c 18                         #             popx    %r0                 ; restore ste
+0x813e: 81 08                         #             jnz     find_table_entry_L2 ; if we missed on the table, skip return and keep going
+0x8140: 50 c2                         #             addx    %sp, 2              ; pop name off the stack, w/out restoring it
+0x8142: 1c f8                         #             popx    %ln                 ; restore return address
+0x8144: af ee                         #             ret                         ; return ste
+0x8146:                               # find_table_entry_L2:
+0x8146: 1c 18                         #             popx    %r0                 ; restore name
+0x8148: 10 28                         #             addx    %r1, %r2            ; invariant guarantee tells us that r1 now is ste + 16
+0x814a: 50 24                         #             addx    %r1, 4              ; ste = ste + 20
+0x814c:                               # find_table_entry_L3:
+0x814c: 13 2c                         #             cmpx    %r1, %r3            ; compare ste against symtab end
+0x814e: 94 e4                         #             jb      find_table_entry_L1 ; loop as long as ste < symtab end
+0x8150: 59 20                         #             mov     %r1, 0              ; argument 1 = 0
+0x8152: 1c f8                         #             popx    %ln                 ; restore return address
+0x8154:                               # add_table_entry:
+0x8154: 1d d0                         #             pushx   %r4                 ; wind a saved register
+0x8156: 19 54                         #             movx    %r2, %r5            ; char *ptr = &static_data
+0x8158: 50 44                         #             addx    %r2, SYMTAB_END_OFS ; ptr = &static_data.symtab_end
+0x815a: 1d c8                         #             pushx   %r2                 ; spill this address for quick retrieval
+0x815c: 1a 48                         #             ldx     %r2, %r2            ; ptr = static_data->symtab_end
+0x815e: 59 64                         #             mov     %r3, 4              ; i = 4
+0x8160:                               # add_table_entry_L1:
+0x8160: 2a 80                         #             ldd     %r4, %r0            ; temp = *name, 32-bit transfer
+0x8162: 2b 88                         #             std     %r4, %r2            ; *ptr = *name, 32-bit transfer
+0x8164: 50 04                         #             addx    %r0, 4              ; name += 4
+0x8166: 50 44                         #             addx    %r2, 4              ; ptr  += 4
+0x8168: 51 61                         #             sub     %r3, 1              ; --i
+0x816a: 91 f6                         #             jnz     add_table_entry_L1  ; loop until i == 0
+0x816c: 2b 28                         #             std     %r1, %r2            ; *ptr = payload
+0x816e: 50 44                         #             addx    %r2, 4              ; ptr += 4
+0x8170: 1c 38                         #             popx    %r1                 ; r1 = &static_data.symtab_end (spilled earlier)
+0x8172: 1a 04                         #             ldx     %r0, %r1            ; return value = static_data->symtab_end
+0x8174: 1b 44                         #             stx     %r2, %r1            ; static_data->symtab_end = ptr
+0x8176: 1c 98                         #             popx    %r4                 ; unwind
+0x8178: af ee                         #             ret
+0x817a:                               # ste_attach_payload:
+0x817a: 1d dc                         #             pushx   %ln                 ; save return address
+0x817c: 1d c4                         #             pushx   %r1                 ; save payload
+0x817e: bf a6                         #             call    find_table_entry    ; r0 = entry for 'name'
+0x8180: 58 30                         #             movz    %r1, 16             ; r1 = offsetof(table_entry, payload)
+0x8182: 10 04                         #             addx    %r0, %r1            ; r0 = &entry.payload
+0x8184: 1c 38                         #             popx    %r1                 ; r1 = payload
+0x8186: 1b 20                         #             stx     %r1, %r0            ; entry->payload = payload
+0x8188: 1c f8                         #             popx    %ln
+0x818a: af ee                         #             ret
+0x818c:                               # ste_get_payload:
+0x818c: 50 08                         #             addx    %r0, 8
+0x818e: 50 08                         #             addx    %r0, 8              ; 16 is too large for add, so add 8 twice
+0x8190: 1a 00                         #             ldx     %r0, %r0            ; entry->payload
+0x8192: af ee                         #             ret
+0x8194:                               # assemble_fp:
+0x8194: 1d dc                         #             pushx   %ln
+0x8196:                               # assemble_fp_L1:
+0x8196: b2 12                         #             call    fpsm
+0x8198: 19 14                         #             movx    %r0, %bp            ; r0 = &static_data
+0x819a: 50 1a                         #             addx    %r0, SRCLINENO_OFS  ; r0 = &static_data.src_lineno
+0x819c: 1a 20                         #             ldx     %r1, %r0            ; r1 = static_data->src_lineno
+0x819e: 50 21                         #             addx    %r1, 1
+0x81a0: 1b 20                         #             stx     %r1, %r0            ; static_data->src_lineno++
+0x81a2: 50 04                         #             addx    %r0, 4              ; r0 = &static_data.reloc_tab_bot
+0x81a4: 1a 20                         #             ldx     %r1, %r0            ; r1 = static_data->reloc_tab_bot
+0x81a6: 1a 54                         #             ldx     %r2, %bp            ; r2 = static_data->asm_ip
+0x81a8: 13 44                         #             cmpx    %r2, %r1            ; asm_ip >? reloc_tab_bot
+0x81aa: 88 06                         #             jbe     assemble_fp_L2      ; if no, don't die
+0x81ac: 59 04                         #             mov     %r0, 4              ; arg 0 = OUT_OF_MEMORY_CODE
+0x81ae: b7 2a                         #             call    die
+0x81b0:                               # assemble_fp_L2:
+0x81b0: 50 08                         #             addx    %r0, 8              ; r0 = &static_data.eol_char
+0x81b2: 0a 00                         #             ldh     %r0, %r0            ; r0 = static_data->eol_char
+0x81b4: 47 1f                         #             testh   %r0, -1             ; test the char
+0x81b6: 91 e0                         #             jnz     assemble_fp_L1      ; loop if it's not \NUL
+0x81b8: 1c f8                         #             popx    %ln                 ; if it's \NUL, we're done.
+0x81ba: af ee                         #             ret
+0x81bc:                               # assemble_sp:
+0x81bc: 1d dc                         #             pushx   %ln
+0x81be: 1a 14                         #             ldx     %r0, %bp            ; r0 = static_data->asm_ip
+0x81c0: 1d c0                         #             pushx   %r0                 ; save ip at end of program
+0x81c2: 59 1a                         #             mov     %r0, SRCLINENO_OFS
+0x81c4: 10 14                         #             addx    %r0, %bp            ; r0 = &static_data.src_lineno
+0x81c6: 1a 00                         #             ldx     %r0, %r0            ; r0 = static_data->src_lineno
+0x81c8: 1d c0                         #             pushx   %r0                 ; save final lineno (idk why but hey)
+0x81ca: 59 1e                         #             mov     %r0, RELOC_TAB_BOT_OFS
+0x81cc: 10 14                         #             addx    %r0, %bp            ; r0 = &static_data.reloc_tab_bot
+0x81ce: 1a 40                         #             ldx     %r2, %r0            ; r2 = reloc_entry = static_data->reloc_tab_bot
+0x81d0: 57 5f                         #             testx   %r2, -1             ; test the pointer to see if it's negative
+0x81d2: 82 1e                         #             jn      assemble_sp_L2      ; skip the loop entirely if so
+0x81d4:                               # assemble_sp_L1:
+0x81d4: 1d c8                         #             pushx   %r2                 ; save original value of reloc_entry
+0x81d6: 1a 28                         #             ldx     %r1, %r2            ; r1 = arg 1 = reloc_entry->asm_ip
+0x81d8: 1b 34                         #             stx     %r1, %bp            ; static_data->asm_ip = reloc_entry->asm_ip
+0x81da: 50 44                         #             addx    %r2, 4              ; &reloc_entry.src_lineno
+0x81dc: 1a 08                         #             ldx     %r0, %r2            ; r0 = reloc_entry->src_lineno
+0x81de: 59 7a                         #             mov     %r3, SRCLINENO_OFS
+0x81e0: 10 74                         #             addx    %r3, %bp            ; r3 = &static_data.src_lineno
+0x81e2: 1b 0c                         #             stx     %r0, %r3            ; static_data->src_lineno = reloc_entry->src_lineno
+0x81e4: 51 42                         #             subx    %r2, 2              ; &reloc_entry.entry
+0x81e6: 1a 08                         #             ldx     %r0, %r2            ; arg 0 = reloc_entry->entry
+0x81e8: b0 18                         #             call    assemble_sp_visit   ; handle this reloc table entry
+0x81ea: 1c 58                         #             popx    %r2                 ; reload original value of reloc_entry
+0x81ec: 50 46                         #             addx    %r2, 6              ; advance to next entry
+0x81ee: 93 e6                         #             jnn     assemble_sp_L1      ; if result is not negative, it's a valid entry. Loop.
+0x81f0:                               # assemble_sp_L2:
+0x81f0: 1c 18                         #             popx    %r0                 ; restore final lineno
+0x81f2: 59 3a                         #             mov     %r1, SRCLINENO_OFS
+0x81f4: 10 34                         #             addx    %r1, %bp            ; &static_data.src_lineno
+0x81f6: 1b 04                         #             stx     %r0, %r1            ; static_data->src_lineno = saved original lineno
+0x81f8: 1c 18                         #             popx    %r0                 ; restore ip at end of program
+0x81fa: 1b 14                         #             stx     %r0, %bp            ; static_data->asm_ip = ip at end of program
+0x81fc: 1c f8                         #             popx    %ln                 ; restore return address
+0x81fe: af ee                         #             ret
+0x8200:                               # assemble_sp_visit:
+0x8200: 1d dc                         #             pushx   %ln
+0x8202: b0 4e                         #             call    sp_get_symbol       ; arg 0 = target = sp_get_symbol(ste)
+0x8204: 0a 44                         #             ldh     %r2, %r1            ; opc = *asm_ip
+0x8206: 43 5f                         #             cmph    %r2, -1             ; test if opc is -1
+0x8208: 81 0c                         #             jne     assemble_sp_visit_tx; if it's not, it's a control transfer
+0x820a: 50 21                         #             addx    %r1, 1              ; asm_ip + 1
+0x820c: 0a 44                         #             ldh     %r2, %r1            ; r2 = reg = *(asm_ip+1)
+0x820e: 19 20                         #             movx    %r1, %r0            ; arg 1 = target
+0x8210: 09 08                         #             movh    %r0, %r2            ; arg 0 = reg
+0x8212: b1 2a                         #             call    assemble_long_mov   ; tail-call (it won't be returning here)
+0x8214:                               # assemble_sp_visit_tx:
+0x8214: 43 4f                         #             cmph    %r2, 15             ; opc >? 15
+0x8216: 89 74                         #             ja      fp_call_L           ; if yes, this is a call
+0x8218: 8e 9e                         #             jmp     fp_jump_L           ; otherwise, it's a jump
+0x821a:                               # fp_get_symbol:
+0x821a: 1d dc                         #             pushx   %ln
+0x821c: 1d c8                         #             pushx   %r2                 ; stack wind
+0x821e: bf 06                         #             call    find_table_entry    ; r0 = entry = find_table_entry(name)
+0x8220: 1d c0                         #             pushx   %r0                 ; spill entry
+0x8222: bf 6a                         #             call    ste_get_payload     ; r0 = ste_get_payload(entry)
+0x8224: 57 1f                         #             testx   %r0, -1             ; check the returned payload value
+0x8226: 81 22                         #             jnz     fp_get_symbol_unwind; if it's not 0, we're done.
+0x8228: 19 34                         #             mov     %r1, %bp            ; r1 = copy &static_data
+0x822a: 50 3e                         #             addx    %r1, RELOC_TAB_BOT_OFS ; r1 = &static_data.reloc_tab_bot
+0x822c: 1a 44                         #             ldx     %r2, %r1            ; r2 = static_data->reloc_tab_bot
+0x822e: 51 46                         #             subx    %r2, 6              ; r2 = static_data->reloc_tab_bot - 1 (ptr arith)
+0x8230: 1b 44                         #             stx     %r2, %r1            ; static_data->reloc_tab_bot -= 1
+0x8232: 1a 14                         #             ldx     %r0, %bp            ; r0 = static_data->asm_ip
+0x8234: 1b 08                         #             stx     %r0, %r2            ; reloc->asmp_ip = static_data->asm_ip
+0x8236: 50 42                         #             addx    %r2, 2              ; point at &reloc.entry
+0x8238: 1c 18                         #             popx    %r0                 ; reload entry from stack
+0x823a: 1b 08                         #             stx     %r0, %r2            ; reloc->entry = entry
+0x823c: 50 3c                         #             addx    %r1, -4             ; offset of lineno from reloc_tab_bot ofs
+0x823e: 1a 04                         #             ldx     %r0, %r1            ; r0 = static_data->src_lineno
+0x8240: 50 42                         #             addx    %r2, 2              ; point at &reloc.src_lineno
+0x8242: 1b 08                         #             stx     %r0, %r2            ; reloc->src_lineno = static_data->src_lineno
+0x8244: 59 00                         #             mov     %r0, 0              ; prepare return value of 0
+0x8246: 8e 04                         #             jmp     fp_get_symbol_unwind2 ; unwind, but we've already popped off entry
+0x8248:                               # fp_get_symbol_unwind:
+0x8248: 50 c2                         #             addx    %sp, 2              ; discard top of stack (spilled entry)
+0x824a:                               # fp_get_symbol_unwind2:
+0x824a: 1c 58                         #             popx    %r2                 ; stack unwind
+0x824c: 1c f8                         #             popx    %ln
+0x824e: af ee                         #             ret
+0x8250:                               # sp_get_symbol:
+0x8250: 1b 18                         #             stx     %r0, %sp            ; cache entry at top-of-stack without pushing
+0x8252: 50 08                         #             addx    %r0, 8
+0x8254: 50 08                         #             addx    %r0, 8              ; point at entry.payload
+0x8256: 1a 00                         #             ldx     %r0, %r0            ; r0 = entry->payload
+0x8258: 57 1f                         #             testx   %r0, -1             ; test payload
+0x825a: af e1                         #             retnz                       ; if it's nonzero, we're done
+0x825c: 1a 38                         #             ldx     %r1, %sp            ; otherwise, reload the entry
+0x825e: 59 05                         #             mov     %r0, 5              ; arg 0 = UNKNOWN_SYMBOL_CODE
+0x8260: b6 78                         #             call    die                 ; crash
+0x8262:                               # fp_die_out_range:
+0x8262: 59 03                         #             mov     %r0, 3              ; OUT_OF_RANGE_CODE
+0x8264: b6 74                         #             call    die
+0x8266:                               # fp_0:
+0x8266: 43 4f                         #             cmph    %r2, 15             ; opc <=? 15
+0x8268: 89 0e                         #             ja      fp_0_encode_ret     ; if not, encode a return
+0x826a: 49 04                         #             movh    %r0, 4              ; otherwise, enc_fst = 4
+0x826c: 4c 00                         #             sloh    %r0, 0              ; enc_fst <<= 5
+0x826e: 04 08                         #             orh     %r0, %r2            ; enc_fst |= opc
+0x8270: 49 20                         #             movh    %r1, 0              ; enc_snd = 0
+0x8272: 59 42                         #             mov     %r2, 2              ; numbytes = 2
+0x8274: 8e 8c                         #             jmp     finalize_encoding   ; tail-call
+0x8276:                               # fp_0_encode_ret:
+0x8276: 59 07                         #             mov     %r0, 7              ; regL = 7
+0x8278: 46 4f                         #             andh    %r2, 15             ; opc &= 15
+0x827a: 8e 02                         #             jmp     fp_RJ               ; tail-call
+0x827c:                               # fp_RJ:
+0x827c: 09 20                         #             movh    %r1, %r0            ; enc_snd = reg
+0x827e: 4c 20                         #             sloh    %r1, 0              ; enc_snd <<= 5
+0x8280: 04 28                         #             orh     %r1, %r2            ; enc_snd |= opc
+0x8282: 49 05                         #             movh    %r0, 5              ; enc_fst = 5
+0x8284: 4c 0f                         #             sloh    %r0, 15             ; enc_fst = enc_fst << 5 | 15
+0x8286: 59 42                         #             mov     %r2, 2              ; numbytes = 2
+0x8288: 8e 78                         #             jmp     finalize_encoding   ; tail-call
+0x828a:                               # fp_call_L:
+0x828a: 11 04                         #             subx    %r0, %r1            ; disp = tgt - here
+0x828c: 58 21 5c 3f 5c 3f             #             mov     %r1, 2047           ; get 2047 for comparison
+0x8292: 13 04                         #             cmpx    %r0, %r1            ; disp >? 2047
+0x8294: 9d ce                         #             jg      fp_die_out_range    ; if yes, die
+0x8296: 52 3f                         #             rsubx   %r1, -1             ; r1 = ~2047 = -2048
+0x8298: 13 04                         #             cmpx    %r0, %r1            ; disp <? -2048
+0x829a: 9a c8                         #             jl      fp_die_out_range
+0x829c: 19 60                         #             mov     %r3, %r0            ; save displacement in r3
+0x829e: 59 28                         #             mov     %r1, 8              ; arg 1 = 8
+0x82a0: be 34                         #             call    shr4                ; imm = (imm >> 4) & 0xFF
+0x82a2: 59 24                         #             mov     %r1, 4              ; arg 1 = 4
+0x82a4: be 30                         #             call    shr4                ; imm = (imm >> 4) & 0xF
+0x82a6: 40 08                         #             addh    %r0, 8
+0x82a8: 40 08                         #             addh    %r0, 8              ; imm += 16
+0x82aa: 59 25                         #             mov     %r1, 5
+0x82ac: 4c 20                         #             sloh    %r1, 0              ; r1 = 5 << 5
+0x82ae: 04 04                         #             orh     %r0, %r1            ; enc_fst = imm | (5 << 5)
+0x82b0: 19 2c                         #             mov     %r1, %r3            ; put displacement back in arg 1
+0x82b2: 59 42                         #             mov     %r2, 2              ; numbytes = 2
+0x82b4: 8e 4c                         #             jmp     finalize_encoding   ; tail-call
+0x82b6:                               # fp_jump_L:
+0x82b6: 12 20                         #             rsubx   %r1, %r0            ; disp = tgt - done
+0x82b8: 58 07 5c 1f                   #             mov     %r0, 255            ; get 255 for comparison
+0x82bc: 13 20                         #             cmpx    %r1, %r0            ; disp >? 255
+0x82be: 9d a4                         #             jg      fp_die_out_range    ; if yes, die
+0x82c0: 52 1f                         #             rsubx   %r0, -1             ; r0 = ~255 = -256
+0x82c2: 13 20                         #             cmpx    %r1, %r0            ; disp <? -256
+0x82c4: 9a 9e                         #             jl      fp_die_out_range
+0x82c6: 53 20                         #             cmpx    %r1, 0              ; disp <? 0
+0x82c8: 8b 06                         #             jge     fp_jump_L_skip_inc  ; if not, don't adjust the opcode
+0x82ca: 50 48                         #             addx    %r2, 8
+0x82cc: 50 48                         #             addx    %r2, 8              ; opc += 16
+0x82ce:                               # fp_jump_L_skip_inc:
+0x82ce: 59 04                         #             mov     %r0, 4              ; enc_fst = 4
+0x82d0: 4c 00                         #             sloh    %r0, 0              ; enc_fst <<= 5
+0x82d2: 04 08                         #             orh     %r0, %r2            ; enc_fst |= opc
+0x82d4: 59 42                         #             mov     %r2, 2              ; numbytes = 2
+0x82d6: 8e 2a                         #             jmp     finalize_encoding   ; tail-call
+0x82d8:                               # fp_RR:
+0x82d8: 00 24                         #             addh    %r1, %r1            ; regR <<= 1
+0x82da: 00 24                         #             addh    %r1, %r1            ; regR <<= 1
+0x82dc: 4c 00                         #             sloh    %r0, 0              ; regL <<= 5
+0x82de: 04 20                         #             orh     %r1, %r0            ; enc_snd = regL (<< 5) | regR (<< 2)
+0x82e0:                               # fp_RX_shared:
+0x82e0: 00 6c                         #             addh    %r3, %r3            ; size_bits << 1
+0x82e2: 00 6c                         #             addh    %r3, %r3            ; size_bits << 2
+0x82e4: 00 6c                         #             addh    %r3, %r3            ; size_bits << 3
+0x82e6: 00 6c                         #             addh    %r3, %r3            ; size_bits << 4
+0x82e8: 09 0c                         #             movh    %r0, %r3            ; enc_fst = size_bits << 4
+0x82ea: 04 08                         #             orh     %r0, %r2            ; enc_fst |= opc
+0x82ec: 59 42                         #             mov     %r2, 2              ; numbytes = 2
+0x82ee: 8e 12                         #             jmp     finalize_encoding
+0x82f0:                               # fp_RI_stdcall:
+0x82f0: 1d dc                         #             pushx   %ln
+0x82f2:                               # fp_RI:
+0x82f2: 4c 00                         #             sloh    %r0, 0              ; regL <<= 5
+0x82f4: 58 ff                         #             movz    %r7, 31
+0x82f6: 06 3c                         #             andh    %r1, %r7            ; imm &= 31
+0x82f8: 04 20                         #             orh     %r1, %r0            ; enc_snd = regL (<< 5) | imm (& 31)
+0x82fa: 40 64                         #             addh    %r3, 4              ; size_bits += 4
+0x82fc: 9e e4                         #             jmp     fp_RX_shared        ; tail-call to setup enc_fst and numbytes
+0x82fe:                               # finalize_encoding_stdcall:
+0x82fe: 1d dc                         #             pushx   %ln
+0x8300:                               # finalize_encoding:
+0x8300: 1a f4                         #             ldx     %r7, %bp            ; r7 = iloc = static_data->asm_ip
+0x8302: 10 5c                         #             addx    %r2, %r7            ; r2 = iloc + numbytes
+0x8304: 1b 54                         #             stx     %r2, %bp            ; static_data->asm_ip += numbytes
+0x8306: 0b 1c                         #             sth     %r0, %r7            ; *iloc = first byte
+0x8308: 50 e1                         #             addx    %r7, 1              ; iloc + 1
+0x830a: 0b 3c                         #             sth     %r1, %r7            ; *(iloc + 1) = second byte
+0x830c: 1c f8                         #             popx    %ln
+0x830e: af ee                         #             ret
+0x8310:                               # fp_R:
+0x8310: 43 4c                         #             cmph    %r2, 12             ; opc == 12?
+0x8312: 81 06                         #             jne     fp_R_push           ; if not, encode a push
+0x8314: 49 26                         #             movh    %r1, 6              ; otherwise, encode a pop
+0x8316: 9e c2                         #             jmp     fp_RR               ; tail-call
+0x8318:                               # fp_R_push:
+0x8318: 09 20                         #             movh    %r1, %r0            ; regR = regL
+0x831a: 49 06                         #             movh    %r0, 6              ; regL = 6
+0x831c: 9e bc                         #             jmp     fp_RR               ; tail-call
+0x831e:                               # fp_I:
+0x831e: 49 06                         #             movh    %r0, 6              ; regL = 6
+0x8320: 9e d2                         #             jmp     fp_RI               ; tail-call
+0x8322:                               # fp_LM:
+0x8322: 57 9f                         #             testx   %r4, -1             ; test name
+0x8324: 80 18                         #             jz      assemble_long_mov   ; if it's null, dispatch immediately (tail call)
+0x8326: 09 40                         #             movh    %r2, %r0            ; r2 = reg
+0x8328: 19 10                         #             movx    %r0, %r4            ; arg 0 = name
+0x832a: be f0                         #             call    fp_get_symbol       ; lookup the payload for name
+0x832c: 57 1f                         #             testx   %r0, -1             ; test it
+0x832e: 81 0a                         #             jnz     fp_LM_have_imm      ; if it's valid, rearrange args and go
+0x8330: 49 1f                         #             movh    %r0, -1             ; otherwise, set up to defer
+0x8332: 09 28                         #             movh    %r1, %r2            ; arg 1 = reg
+0x8334: 59 48                         #             movx    %r2, 8              ; numbytes = 8
+0x8336: 9e ca                         #             jmp     finalize_encoding   ; tail-call
+0x8338:                               # fp_LM_have_imm:
+0x8338: 19 20                         #             movx    %r1, %r0            ; arg 1 = imm
+0x833a: 09 08                         #             movh    %r0, %r2            ; arg 0 = reg
+0x833c:                               # assemble_long_mov:
+0x833c: 1d c0                         #             pushx   %r0                 ; spill reg
+0x833e: 1d c4                         #             pushx   %r1                 ; spill immediate
+0x8340: 53 20                         #             cmpx    %r1, 0              ; imm <? 0
+0x8342: 59 20                         #             mov     %r1, 0              ; arg 1 = 0
+0x8344: 8b 04                         #             jge     alm_L1              ; if imm >= 0, don't adjust arg 1
+0x8346: 59 21                         #             mov     %r1, 1              ; otherwise arg 1 = 1
+0x8348:                               # alm_L1:
+0x8348: 59 49                         #             mov     %r2, 9              ; opc = 9
+0x834a: 59 61                         #             mov     %r3, 1              ; size_bits = 1
+0x834c: bf a4                         #             call    fp_RI_stdcall       ; encode 'mov %dst, bool(imm < 0)'
+0x834e: 1c 18                         #             popx    %r0                 ; r0 = reload immediate
+0x8350: 1c 98                         #             popx    %r4                 ; r4 = reload reg (r4 is not clobbered by fp_RI)
+0x8352: 58 3f                         #             movz    %r1, 31             ; get 31
+0x8354: 16 20                         #             andx    %r1, %r0            ; r1 = bottom = imm & 31
+0x8356: 1d c4                         #             pushx   %r1                 ; spill bottom
+0x8358: 59 2a                         #             mov     %r1, 10             ; arg 1 = 10
+0x835a: bd 72                         #             call    shr5                ; middle = (imm >> 5) & 0x3FF
+0x835c: 58 3f                         #             movz    %r1, 31
+0x835e: 16 20                         #             andx    %r1, %r0            ; r1 = middle & 0x1F
+0x8360: 1d c4                         #             pushx   %r1                 ; spill that value
+0x8362: 59 25                         #             mov     %r1, 5              ; arg 1 = 5
+0x8364: bd 68                         #             call    shr5                ; top = (imm >> 10) & 0x1F
+0x8366: 19 20                         #             mov     %r1, %r0            ; arg 1 = top
+0x8368: 19 10                         #             mov     %r0, %r4            ; arg 0 = reg
+0x836a: 59 4c                         #             mov     %r2, 12             ; arg 2 = 12
+0x836c: 59 61                         #             mov     %r3, 1              ; size_bits = 1
+0x836e: bf 82                         #             call    fp_RI_stdcall       ; encode 'slo %dst, ((imm >> 10) & 0x1F)'
+0x8370: 1c 38                         #             popx    %r1                 ; arg 1 = reload middle & 0x1F
+0x8372: 19 10                         #             mov     %r0, %r4            ; arg 0 = reg
+0x8374: 59 4c                         #             mov     %r2, 12             ; arg 2 = 12
+0x8376: 59 61                         #             mov     %r3, 1              ; size_bits = 1
+0x8378: bf 78                         #             call    fp_RI_stdcall       ; encode 'slo %dst, ((imm >> 5) & 0x1F)'
+0x837a: 1c 38                         #             popx    %r1                 ; reload bottom
+0x837c: 19 10                         #             mov     %r0, %r4            ; arg 0 = reg
+0x837e: 59 4c                         #             mov     %r2, 12             ; arg 2 = 12
+0x8380: 59 61                         #             mov     %r3, 1              ; size_bits = 1
+0x8382: 9e 70                         #             jmp     fp_RI               ; encode 'slo %dst, (imm & 0x1F)' and return
+0x8384:                               # fp_LJ_good_payload:
+0x8384: 58 3e                         #             mov     %r1, 30             ; get 30 for comparison
+0x8386: 03 44                         #             cmph    %r2, %r1            ; opc == 30?
+0x8388: 1a 34                         #             ldx     %r1, %bp            ; arg 1 = static_data->asm_ip
+0x838a: 90 00                         #             je      fp_call_L           ; if opc == 30, go to call_L
+0x838c: 9e 2a                         #             jmp     fp_jump_L           ; otherwise, to jump_L
+0x838e:                               # fp_LJ:
+0x838e: 43 4f                         #             cmph    %r2, 15             ; opc >? 15
+0x8390: 88 08                         #             jbe     fp_LJ_good_opc      ; if no, we have a jump which is valid
+0x8392: 58 1e                         #             mov     %r0, 30             ; get 30 for comparison
+0x8394: 03 40                         #             cmph    %r2, %r0            ; opc == 30?
+0x8396: 81 ce                         #             jne     fpsm_reject         ; if no, reject
+0x8398:                               # fp_LJ_good_opc:
+0x8398: 19 10                         #             mov     %r0, %r4            ; arg 0 = name
+0x839a: be 80                         #             call    fp_get_symbol       ; r0 = payload for name in symtab
+0x839c: 57 1f                         #             testx   %r0, -1             ; test the payload
+0x839e: 91 e6                         #             jnz     fp_LJ_good_payload  ; if it's not 0, dispatch to {call/jump}_L
+0x83a0: 09 08                         #             movh    %r0, %r2            ; arg 0 = opc
+0x83a2: 59 3f                         #             mov     %r1, -1             ; arg 1 = -1
+0x83a4: 59 42                         #             mov     %r2, 2              ; numbytes = 2
+0x83a6: 9e 5a                         #             jmp     finalize_encoding   ; tail-call
+0x83a8:                               # fpsm:
+0x83a8: 1d dc                         #             pushx   %ln
+0x83aa: 1d d4                         #             pushx   %r5
+0x83ac: 1a 74                         #             ldx     %r3, %r5            ; r3 = static_data->asm_ip
+0x83ae: 4a a1                         #             ldh     %r5, STREAM         ; initialize reader
+0x83b0: b4 a4                         #             call    cur_is_alpha        ; r0 = is_alpha(cur)
+0x83b2: 47 1f                         #             testh   %r0, -1             ; test is_alpha(cur)
+0x83b4: 80 1a                         #             jz      fpsm_0_notalpha     ; branch past name read if not name start
+0x83b6: b2 56                         #             call    read_name           ; r0 = pointer to read-in name
+0x83b8: 09 94                         #             movh    %r4, %r5            ; stash cur in r4
+0x83ba: 1c b8                         #             popx    %r5                 ; temporarily reload &static_data
+0x83bc: 19 2c                         #             movx    %r1, %r3            ; r1 = static_data->asm_ip
+0x83be: bd bc                         #             call    ste_attach_payload  ; add this entry to the symbol table
+0x83c0: 1d d4                         #             pushx   %r5                 ; re-push &static_data
+0x83c2: 09 b0                         #             movh    %r5, %r4            ; restore cur to r5
+0x83c4: 58 01 5c 1a                   #             mov     %r0, ':'
+0x83c8: b3 5e                         #             call    match               ; cur == ':'?
+0x83ca: 47 1f                         #             testh   %r0, -1             ; test result
+0x83cc: 81 98                         #             jnz     fpsm_reject         ; reject with syntax error if cur != ':'
+0x83ce:                               # fpsm_0_notalpha:
+0x83ce: 59 21                         #             mov     %r1, 1              ; state = 1
+0x83d0: 8e d6                         #             jmp     fpsm_iterate        ; step the loop
+0x83d2:                               # fpsm_1:                                 ; switch case 1
+0x83d2: b4 e2                         #             call    cur_is_eol          ; r0 = is_eol(cur)
+0x83d4: 47 1f                         #             testh   %r0, -1             ; test result
+0x83d6: 81 12                         #             jnz     fpsm_1_accept       ; accept if is_eol(cur)
+0x83d8: b3 54                         #             call    read_opcode         ; r0 = rop.opcode, r1 = rop.state
+0x83da: 09 80                         #             movh    %r4, %r0            ; temporarily save the opcode in r4
+0x83dc: 09 64                         #             movh    %r3, %r1            ; temporarily save the target state in r3
+0x83de: b1 c6                         #             call    read_size           ; r0 = size_bits
+0x83e0: 1d c0                         #             pushx   %r0                 ; put size_bits in their stack slot
+0x83e2: 1d d0                         #             pushx   %r4                 ; put opcode into its stack slot
+0x83e4: 09 2c                         #             movh    %r1, %r3            ; re-place the state in r1
+0x83e6: 8e c0                         #             jmp     fpsm_iterate        ; break
+0x83e8:                               # fpsm_1_accept:
+0x83e8: 1c 98                         #             popx    %r4                 ; restore static_data pointer
+0x83ea: 50 86                         #             addx    %r4, EOL_CHAR_OFS   ; &static_data.eol_char
+0x83ec: 0b b0                         #             sth     %r5, %r4            ; static_data->eol_char = cur
+0x83ee: 51 86                         #             subx    %r4, EOL_CHAR_OFS   ; undo offset
+0x83f0: 19 b0                         #             movx    %r5, %r4            ; move pointer back where it belongs
+0x83f2: 1c f8                         #             popx    %ln
+0x83f4: af ee                         #             ret
+0x83f6:                               # fpsm_2:
+0x83f6: 58 01 5c 05                   #             mov     %r0, '%'            ; r0 = '%' to check for register
+0x83fa: 03 a0                         #             cmph    %r5, %r0            ; cur == '%'?
+0x83fc: 81 0a                         #             jne     fpsm_2_imm          ; if not equal, try checking immediate
+0x83fe: b3 00                         #             call    read_register       ; if yes equal, read a register
+0x8400: 09 40                         #             movh    %r2, %r0            ; regL = read_register()
+0x8402: 59 2c                         #             mov     %r1, 12             ; state = 12
+0x8404: 8e a2                         #             jmp     fpsm_iterate        ; break
+0x8406:                               # fpsm_2_imm:
+0x8406: b4 7c                         #             call    cur_is_imm_start    ; r0 = is_imm_start(cur)
+0x8408: 47 1f                         #             testh   %r0, -1             ; test is_imm_start(cur)
+0x840a: 80 5a                         #             jz      fpsm_reject         ; if !is_imm_start(cur), this state rejects
+0x840c: b1 ca                         #             call    read_immediate      ; otherwise, read the immediate
+0x840e: 58 3f                         #             movz    %r1, 31             ; validate_u5 in %r0; see 'validate_u5' below
+0x8410: 23 04                         #             cmpd    %r0, %r1            ; set 'be' condition if imm is valid
+0x8412: 89 56                         #             ja      fpsm_invalid_imm    ; if not 'be' condition, imm is invalid. Die.
+0x8414: 19 60                         #             movx    %r3, %r0            ; imm = read & validated immediate
+0x8416: 59 2d                         #             mov     %r1, 13             ; state = 13
+0x8418: 8e 8e                         #             jmp     fpsm_iterate        ; break
+0x841a:                               # fpsm_3:
+0x841a: 58 01 5c 05                   #             mov     %r0, '%'            ; r0 = '%' to check for register
+0x841e: 03 a0                         #             cmph    %r5, %r0            ; cur == '%'?
+0x8420: 81 0a                         #             jne     fpsm_3_label        ; if not equal, try checking label
+0x8422: b2 dc                         #             call    read_register       ; if yes equal, read a register
+0x8424: 09 40                         #             movh    %r2, %r0            ; regL = read_register()
+0x8426: 59 2e                         #             mov     %r1, 14             ; state = 14
+0x8428: 8e 7e                         #             jmp     fpsm_iterate        ; break
+0x842a:                               # fpsm_3_label:
+0x842a: b4 2a                         #             call    cur_is_alpha        ; r0 = is_alpha(cur)
+0x842c: 47 1f                         #             testh   %r0, -1             ; test is_alpha(cur)
+0x842e: 80 36                         #             jz      fpsm_reject         ; if !is_alpha(cur), this state rejects
+0x8430: b1 dc                         #             call    read_name           ; r0 = read_name()
+0x8432: 19 80                         #             movx    %r4, %r0            ; symbolptr = read_name()
+0x8434: 59 2f                         #             mov     %r1, 15             ; state = 15
+0x8436: 8e 70                         #             jmp     fpsm_iterate        ; break
+0x8438:                               # fpsm_4:
+0x8438: 58 01 5c 05                   #             mov     %r0, '%'            ; r0 = '%' to check for register
+0x843c: 03 a0                         #             cmph    %r5, %r0            ; cur == '%'?
+0x843e: 81 26                         #             jne     fpsm_reject         ; if not a register, this state rejects
+0x8440: b2 be                         #             call    read_register       ; r0 = read_register()
+0x8442: 09 40                         #             movh    %r2, %r0            ; regL = read_register()
+0x8444: 59 2c                         #             mov     %r1, 12             ; state = 12
+0x8446: 8e 60                         #             jmp     fpsm_iterate        ; break
+0x8448:                               # fpsm_5:
+0x8448: 58 01 5c 05                   #             mov     %r0, '%'            ; r0 = '%' to check for register
+0x844c: 03 a0                         #             cmph    %r5, %r0            ; cur == '%'?
+0x844e: 81 16                         #             jne     fpsm_reject         ; if not a register, this state rejects
+0x8450: b2 ae                         #             call    read_register       ; r0 = read_register()
+0x8452: 09 40                         #             movh    %r2, %r0            ; regL = read_register()
+0x8454: 59 26                         #             mov     %r1, 6              ; state = 6
+0x8456:                               # fpsm_scan_comma:
+0x8456: b1 28                         #             call    skip_whitespace     ; skip whitespace between reg and comma
+0x8458: 58 01 5c 0c                   #             mov     %r0, ','            ; r0 = ',' to check
+0x845c: b2 ca                         #             call    match               ; r0 = (cur != ',')
+0x845e: 47 1f                         #             testh   %r0, -1             ; test (cur != ',')
+0x8460: 81 04                         #             jnz     fpsm_reject         ; if it's not a comma, that's an error
+0x8462: 8e 44                         #             jmp     fpsm_iterate        ; break
+0x8464:                               # fpsm_reject:
+0x8464: 59 00                         #             mov     %r0, 0              ; r0 = INVALID_SYNTAX_CODE
+0x8466: b4 72                         #             call    die
+0x8468:                               # fpsm_invalid_imm:
+0x8468: 59 02                         #             mov     %r0, 2              ; r0 = INVALID_IMMEDIATE_CODE
+0x846a: b4 6e                         #             call    die
+0x846c:                               # fpsm_6:
+0x846c: 1c 98                         #             popx    %r4                 ; r4 = opc
+0x846e: 51 c2                         #             subx    %sp, 2              ; put %sp back so that opc stays on the stack
+0x8470: 58 01 5c 05                   #             mov     %r0, '%'            ; r0 = '%' to check for register
+0x8474: 03 a0                         #             cmph    %r5, %r0            ; cur == '%'?
+0x8476: 81 0e                         #             jne     fpsm_6_imm          ; if not a register, try checking immediate
+0x8478: 43 8c                         #             cmph    %r4, 12             ; opc == OPC_SLO?
+0x847a: 90 ea                         #             je      fpsm_reject         ; this state rejects OPC_SLO
+0x847c: b2 82                         #             call    read_register       ; r0 = read_register()
+0x847e: 09 60                         #             movh    %r3, %r0            ; regR = read_register()
+0x8480: 58 30                         #             mov     %r1, 16             ; state = 16
+0x8482: 8e 24                         #             jmp     fpsm_iterate        ; break
+0x8484:                               # fpsm_6_imm:
+0x8484: b3 fe                         #             call    cur_is_imm_start    ; r0 = is_imm_start(cur)
+0x8486: 57 1f                         #             test    %r0, -1             ; test is_imm_start(cur)
+0x8488: 90 dc                         #             jz      fpsm_reject         ; if !is_imm_start(cur), this state rejects
+0x848a: b1 4c                         #             call    read_immediate      ; r0 = read_immediate()
+0x848c: 43 8a                         #             cmph    %r4, 10             ; opc >= 10?
+0x848e: 85 0c                         #             jae     fpsm_6_u5           ; if yes, validate unsigned
+0x8490: 43 88                         #             cmph    %r4, 8              ; opc == 8?
+0x8492: 80 08                         #             je      fpsm_6_u5           ; if yes, validate unsigned
+0x8494:                               # fpsm_6_s5:
+0x8494: b3 ae                         #             call    validate_s5         ; r0 unchanged, flags set 'b' if valid
+0x8496: 95 d2                         #             jae     fpsm_invalid_imm    ; if not 'b' condition, imm is invalid. Die.
+0x8498: 8e 08                         #             jmp     fpsm_6_end          ; clean up
+0x849a:                               # fpsm_6_u5:
+0x849a: 58 3f                         #             movz    %r1, 31             ; validate_u5 in %r0; see 'validate_u5' below
+0x849c: 23 04                         #             cmpd    %r0, %r1            ; set 'be' condition if imm is valid
+0x849e: 99 ca                         #             ja      fpsm_invalid_imm    ; if not 'be' condition, imm is invalid. Die.
+0x84a0:                               # fpsm_6_end:
+0x84a0: 19 60                         #             movx    %r3, %r0            ; imm = r0
+0x84a2: 58 31                         #             mov     %r1, 17             ; state = 17
+0x84a4: 8e 02                         #             jmp     fpsm_iterate        ; break
+0x84a6:                               # fpsm_iterate:
+0x84a6: b0 d8                         #             call    skip_whitespace
+0x84a8: 43 2a                         #             cmph    %r1, 10             ; compare state to 10
+0x84aa: 89 9c                         #             ja      fpsm_eol            ; if bigger, go to the eol+accept check
+0x84ac: b0 16                         #             call    fpsm_iterate_2      ; put the address of the action table in r7
+0x84ae:                               # fpsm_action_table:
+0x84ae: 64 84 d2 83 f6 83 1a 84 38 84 #             .word   fpsm_reject fpsm_1 fpsm_2 fpsm_3 fpsm_4
+0x84b8: 48 84 6c 84 ca 84 e0 84 2e 85 #             .word   fpsm_5 fpsm_6 fpsm_7 fpsm_8 fpsm_9
+0x84c2:                               # fpsm_iterate_2:
+0x84c2: 00 24                         #             addh    %r1, %r1            ; state *= sizeof(word)
+0x84c4: 10 3c                         #             addx    %r1, %r7            ; r1 = pointer to pointer switch case
+0x84c6: 1a 24                         #             ldx     %r1, %r1            ; r1 = pointer to switch case
+0x84c8: af 2e                         #             jmp     %r1                 ; follow the yellow brick road
+0x84ca:                               # fpsm_7:
+0x84ca: 58 01 5c 05                   #             mov     %r0, '%'            ; r0 = '%' to check for register
+0x84ce: 03 a0                         #             cmph    %r5, %r0            ; cur == '%'?
+0x84d0: 91 94                         #             jne     fpsm_reject         ; if not register, this state rejects
+0x84d2: b1 66                         #             call    read_any_register   ; r0 = read_any_register()
+0x84d4: 09 40                         #             movh    %r2, %r0            ; regL = read_any_register()
+0x84d6: 43 48                         #             cmph    %r2, 8              ; regL <? 8
+0x84d8: 59 28                         #             mov     %r1, 8              ; state = 8
+0x84da: 94 7c                         #             jb      fpsm_scan_comma     ; if regL < 8, scan comma
+0x84dc: 59 29                         #             mov     %r1, 9              ; otherwise, state = 9
+0x84de: 9e 78                         #             jmp     fpsm_scan_comma     ; then scan comma
+0x84e0:                               # fpsm_8:
+0x84e0: 58 01 5c 05                   #             mov     %r0, '%'            ; r0 = '%' to check for register
+0x84e4: 03 a0                         #             cmph    %r5, %r0            ; cur == '%'?
+0x84e6: 81 18                         #             jne     fpsm_8_imm          ; if not register, try immediate
+0x84e8: b1 50                         #             call    read_any_register   ; r0 = read_any_register()
+0x84ea: 09 60                         #             movh    %r3, %r0            ; regR = read_any_register()
+0x84ec: 43 68                         #             cmph    %r3, 8              ; regR <? 8
+0x84ee: 8b 06                         #             jge     fpsm_8_ctrl_reg     ; if regR >= 8, it's a control reg
+0x84f0: 58 30                         #             mov     %r1, 16             ; state = 16
+0x84f2: 9e b4                         #             jmp     fpsm_iterate        ; break
+0x84f4:                               # fpsm_8_ctrl_reg:
+0x84f4: 41 68                         #             subh    %r3, 8              ; imm = regR - 8
+0x84f6: 50 c2                         #             addx    %sp, 2              ; point at stack slot of opc
+0x84f8: 5d ce                         #             pushx   14                  ; overwrite opc with 14
+0x84fa: 58 31                         #             mov     %r1, 17             ; state = 17
+0x84fc: 9e aa                         #             jmp     fpsm_iterate        ; break
+0x84fe:                               # fpsm_8_imm:
+0x84fe: b3 84                         #             call    cur_is_imm_start    ; r0 = is_imm_start(cur)
+0x8500: 47 1f                         #             testh   %r0, -1             ; test is_imm_start(cur)
+0x8502: 80 1e                         #             jz      fpsm_8_label        ; if not an imm, try label
+0x8504: b0 d2                         #             call    read_immediate      ; r0 = read_immediate()
+0x8506: b3 3c                         #             call    validate_s5         ; set 'b' if r0 is a valid s5
+0x8508: 58 31                         #             mov     %r1, 17             ; state = 17
+0x850a: 29 60                         #             movd    %r3, %r0            ; imm = read_immediate()
+0x850c: 94 9a                         #             jb      fpsm_iterate        ; break, if imm is a valid s5
+0x850e: 19 0c                         #             movsx   %r0, %r3            ; r0 = sign_extend(imm, 16)
+0x8510: 23 0c                         #             cmpd    %r0, %r3            ; imm == sign_extend(imm, 16)?
+0x8512: 80 08                         #             je      fpsm_8_vld_i16      ; if yes, it's valid
+0x8514: 18 0c                         #             movzx   %r0, %r3            ; otherwise try r0 = zero_extend(imm,16)
+0x8516: 23 0c                         #             cmpd    %r0, %r3            ; imm == zero_extend(imm, 16)?
+0x8518: 91 50                         #             jne     fpsm_invalid_imm    ; if no, imm is not a valid i16. Die.
+0x851a:                               # fpsm_8_vld_i16:
+0x851a: 59 80                         #             mov     %r4, 0              ; symbolptr = NULL
+0x851c: 58 32                         #             mov     %r1, 18             ; state = 18
+0x851e: 9e 88                         #             jmp     fpsm_iterate        ; break
+0x8520:                               # fpsm_8_label:
+0x8520: b3 34                         #             call    cur_is_alpha        ; r0 = is_alpha(cur)
+0x8522: 47 1f                         #             testh   %r0, -1             ; test is_alpha(cur)
+0x8524: 90 40                         #             jz      fpsm_reject         ; if !is_alpha(cur), finally this state rejects.
+0x8526: b0 e6                         #             call    read_name           ; r0 = read_name()
+0x8528: 19 80                         #             movx    %r4, %r0            ; symbolptr = read_name()
+0x852a: 58 32                         #             mov     %r1, 18             ; state = 18
+0x852c: 9e 7a                         #             jmp     fpsm_iterate        ; break
+0x852e:                               # fpsm_9:
+0x852e: 58 01 5c 05                   #             mov     %r0, '%'            ; r0 = '%' to check for register
+0x8532: 03 a0                         #             cmph    %r5, %r0            ; r0 == '%'?
+0x8534: 91 30                         #             jne     fpsm_reject         ; if not a register, this state rejects
+0x8536: 09 68                         #             movh    %r3, %r2            ; imm = regL
+0x8538: 41 68                         #             subh    %r3, 8              ; imm -= 8
+0x853a: b1 c4                         #             call    read_register       ; r0 = read_register()
+0x853c: 09 40                         #             movh    %r2, %r0            ; r2 = read_register()
+0x853e: 50 c2                         #             addx    %sp, 2              ; point %sp at stack slot of opc
+0x8540: 5d cf                         #             pushx   15                  ; overwrite opc with 15
+0x8542: 58 31                         #             mov     %r1, 17             ; state = 17
+0x8544: 9e 62                         #             jmp     fpsm_iterate
+0x8546:                               # fpsm_eol:
+0x8546: b3 6e                         #             call    cur_is_eol          ; r0 = is_eol(cur)
+0x8548: 47 1f                         #             testh   %r0, -1             ; test is_eol(cur)
+0x854a: 90 1a                         #             jz      fpsm_reject         ; if it's not eol (somehow?) reject!
+0x854c:                               # fpsm_accept:
+0x854c: 50 c6                         #             addx    %sp, 6              ; point at stack slot of &static_data
+0x854e: 1a f8                         #             ldx     %r7, %sp            ; r7 = &static_data
+0x8550: 51 c6                         #             subx    %sp, 6              ; restore %sp
+0x8552: 50 e6                         #             addx    %r7, EOL_CHAR_OFS   ; r7 = &static_data.eol_char
+0x8554: 0b bc                         #             sth     %r5, %r7            ; static_data->eol_char = cur
+0x8556: 09 a4                         #             movh    %r5, %r1            ; r5 = state, temporarily
+0x8558: 09 08                         #             movh    %r0, %r2            ; arg 0 = regL
+0x855a: 19 2c                         #             movx    %r1, %r3            ; arg 1 = regR/imm
+0x855c: 1c 58                         #             popx    %r2                 ; arg 2 = opcode
+0x855e: 1c 78                         #             popx    %r3                 ; arg 3 = size_bits
+0x8560: b0 12                         #             call    fpsm_accept_exit    ; get the address of the table into r7
+0x8562:                               # fpsm_accept_jump_table:
+0x8562: 66 82 10 83 1e 83 7c 82 8e 83 d8 82 f2 82 22 83#             .word   fp_0 fp_R fp_I fp_RJ fp_LJ fp_RR fp_RI fp_LM
+0x8572:                               # fpsm_accept_exit:
+0x8572: 41 ab                         #             subh    %r5, 11             ; offset = state - 11
+0x8574: 00 b4                         #             addh    %r5, %r5            ; offset *= sizeof(word)
+0x8576: 10 f4                         #             addx    %r7, %r5            ; r7 = pointer to address to jump to
+0x8578: 1a fc                         #             ldx     %r7, %r7            ; r7 = address to jump to
+0x857a: 1c b8                         #             popx    %r5                 ; r5 = &static_data. Hooray!
+0x857c: af ee                         #             jmp     %r7                 ; tail-call the assembling function
+0x857e:                               # skip_whitespace:
+0x857e: 58 01 5c 00                   #             mov     %r0, ' '            ; r0 = 32
+0x8582: 8e 04                         #             jmp     skip_whitespace_L2
+0x8584:                               # skip_whitespace_L1:
+0x8584: 4a a1                         #             ldh     %r5, STREAM         ; cur = getchar()
+0x8586:                               # skip_whitespace_L2:
+0x8586: 03 a0                         #             cmph    %r5, %r0            ; r5 ==? 32
+0x8588: 90 fc                         #             je      skip_whitespace_L1
+0x858a: 43 a9                         #             cmph    %r5, '\t'           ; r5 ==? 9
+0x858c: 90 f8                         #             je      skip_whitespace_L1
+0x858e: 58 01 5c 1b                   #             mov     %r0, ';'            ; r0 = 59
+0x8592: 03 a0                         #             cmph    %r5, %r0
+0x8594: af e1                         #             retne                       ; return if cur != ';'
+0x8596: 1d dc                         #             pushx   %ln
+0x8598:                               # skip_whitespace_L3:
+0x8598: 4a a1                         #             ldh     %r5, STREAM         ; cur = getchar()
+0x859a: b3 1a                         #             call    cur_is_eol          ; r0 = is_eol(cur)
+0x859c: 47 1f                         #             testh   %r0, -1             ; test is_eol(cur)
+0x859e: 90 fa                         #             jz      skip_whitespace_L3  ; loop as long as is_eol(cur) is false
+0x85a0: 1c f8                         #             popx    %ln
+0x85a2: af ee                         #             ret
+0x85a4:                               # read_size:
+0x85a4: 1d dc                         #             pushx   %ln
+0x85a6: b2 ae                         #             call    cur_is_alpha        ; r0 = is_alpha(cur)
+0x85a8: 47 1f                         #             testh   %r0, -1             ; test is_alpha(cur)
+0x85aa: 59 01                         #             mov     %r0, 1              ; set return value for if !is_alpha(cur)
+0x85ac: 80 22                         #             jz      read_size_ret
+0x85ae: 58 23 5c 38                   #             mov     %r1, 'x'            ; r1 = 120
+0x85b2: 01 a4                         #             subh    %r5, %r1            ; cur = cur - 'x'
+0x85b4: 80 0e                         #             je      read_size_guard
+0x85b6: 41 b0                         #             subh    %r5, -16            ; cur = cur + ('x' - 'h')
+0x85b8: 59 00                         #             mov     %r0, 0              ; set return value for cur == 'h'
+0x85ba: 80 08                         #             je      read_size_guard
+0x85bc: 40 a4                         #             addh    %r5, 4              ; cur = cur + ('h' - 'd')
+0x85be: 59 02                         #             mov     %r0, 2              ; set return value for cur == 'd'
+0x85c0: 81 12                         #             jne     read_size_kill      ; not valid suffix if cur != 'd' at this point
+0x85c2:                               # read_size_guard:
+0x85c2: 1d c0                         #             pushx   %r0                 ; spill return value
+0x85c4: 4a a1                         #             ldh     %r5, STREAM         ; cur = getchar()
+0x85c6: b2 d8                         #             call    cur_is_alphanum     ; r0 = is_alphanum(cur)
+0x85c8: 47 1f                         #             testh   %r0, -1             ; test is_alphanum(cur)
+0x85ca: 81 08                         #             jnz     read_size_kill      ; crash if cur is alphanumeric
+0x85cc: 1c 18                         #             popx    %r0                 ; reload return value
+0x85ce:                               # read_size_ret:
+0x85ce: 1c f8                         #             popx    %ln
+0x85d0: af ee                         #             ret
+0x85d2:                               # read_size_kill:
+0x85d2: 59 00                         #             mov     %r0, 0              ; r0 = INVALID_SYNTAX_CODE
+0x85d4: b3 04                         #             call    die
+0x85d6:                               # read_immediate:
+0x85d6: 1d c8                         #             pushx   %r2                 ; wind
+0x85d8: 58 01 5c 0d                   #             mov     %r0, '-'            ; 45, this mov is 2 instructions
+0x85dc: 58 21 5c 30                   #             mov     %r1, '0'            ; this mov is also 2 instructions
+0x85e0: 02 14                         #             rsubh   %r0, %r5            ; r0 = r5 - 45
+0x85e2: 1d c0                         #             pushx   %r0                 ; save the result of this subtraction
+0x85e4: 80 12                         #             je      read_immediate_L2   ; read extra char if '-'; r0 = imm = 0 since 'e'
+0x85e6: 59 00                         #             mov     %r0, 0              ; r0 = imm = 0
+0x85e8: 8e 10                         #             jmp     read_immediate_L3   ; jump to loop add step
+0x85ea:                               # read_immediate_L1:
+0x85ea: 20 00                         #             addd    %r0, %r0            ; imm *= 2
+0x85ec: 29 40                         #             movd    %r2, %r0            ; immx2 = imm
+0x85ee: 20 00                         #             addd    %r0, %r0            ; imm *= 2 (x4 cumulative)
+0x85f0: 20 00                         #             addd    %r0, %r0            ; imm *= 2 (x8 cumulative)
+0x85f2: 20 08                         #             addd    %r0, %r2            ; imm = imm + immx2 (x10 cumulative)
+0x85f4: 20 14                         #             addd    %r0, %r5            ; imm = imm + cur - 48
+0x85f6:                               # read_immediate_L2:
+0x85f6: 4a a1                         #             ldh     %r5, STREAM         ; r5 = getchar()
+0x85f8:                               # read_immediate_L3:
+0x85f8: 01 a4                         #             subh    %r5, %r1            ; r5 = cur - 48
+0x85fa: 43 aa                         #             cmph    %r5, 10             ; compare (cur - 48) to 10
+0x85fc: 94 ee                         #             jb      read_immediate_L1   ; loop if 0 <= (cur - 48) < 10
+0x85fe: 00 a4                         #             addh    %r5, %r1            ; r5 = cur (previously, r5 = cur-48)
+0x8600: 1c 38                         #             popx    %r1                 ; retrieve the comparison of initial cur to '-'
+0x8602: 1c 58                         #             popx    %r2                 ; unwind stack
+0x8604: 47 3f                         #             testh   %r1, -1             ; test the result of that comparison, zero means equal
+0x8606: af e1                         #             retnz                       ; if it wasn't equal, we're done
+0x8608: 62 00                         #             rsubd   %r0, 0              ; otherwise, imm = -imm
+0x860a: af ee                         #             ret                         ; and now we're done.
+0x860c:                               # read_name:
+0x860c: 1d dc                         #             pushx   %ln
+0x860e: 1d c8                         #             pushx   %r2
+0x8610: 58 01 5c 00                   #             mov     %r0, 32             ; r0 = buffer
+0x8614: 59 40                         #             mov     %r2, 0              ; i = 0
+0x8616:                               # read_name_L1:
+0x8616: 0b a0                         #             sth     %r5, %r0            ; *buffer = cur
+0x8618: 50 01                         #             addx    %r0, 1              ; ++buffer
+0x861a: 40 41                         #             addh    %r2, 1              ; ++i
+0x861c: 4a a1                         #             ldh     %r5, STREAM         ; cur = getchar()
+0x861e: 43 4f                         #             cmph    %r2, 15             ; i <=? 15
+0x8620: 89 10                         #             ja      read_name_L3        ; return if i > 15
+0x8622: 1d c0                         #             pushx   %r0                 ; spill buffer
+0x8624: b2 7a                         #             call    cur_is_name_char    ; r0 = is cur a valid name char?
+0x8626: 57 01                         #             test    %r0, 1
+0x8628: 1c 18                         #             popx    %r0                 ; unspill buffer
+0x862a: 91 ec                         #             jnz     read_name_L1        ; if it's valid, loop
+0x862c:                               # read_name_L2:                           ; if we reach this label, i < 16
+0x862c: 59 20                         #             mov     %r1, 0
+0x862e: 0b 20                         #             sth     %r1, %r0            ; *buffer = 0
+0x8630:                               # read_name_L3:
+0x8630: 11 08                         #             subx    %r0, %r2            ; buffer = buffer - i === 32
+0x8632: 1c 58                         #             popx    %r2
+0x8634: 1c f8                         #             popx    %ln
+0x8636: af ee                         #             ret
+0x8638:                               # read_any_register:
+0x8638: 1d dc                         #             pushx   %ln
+0x863a: b0 74                         #             call    read_any_register_actual ; put &register_table in %ln
+0x863c:                               # register_table:
+0x863c: 61 30                         #             .ascii  "a0"
+0x863e: 00 00 44 8a                   #             .word   0 empty_str
+0x8642: 61 31                         #             .ascii  "a1"
+0x8644: 01 00 44 8a                   #             .word   1 empty_str
+0x8648: 61 32                         #             .ascii  "a2"
+0x864a: 02 00 44 8a                   #             .word   2 empty_str
+0x864e: 73 30                         #             .ascii  "s0"
+0x8650: 03 00 44 8a                   #             .word   3 empty_str
+0x8654: 73 31                         #             .ascii  "s1"
+0x8656: 04 00 44 8a                   #             .word   4 empty_str
+0x865a: 62 70                         #             .ascii  "bp"
+0x865c: 05 00 44 8a                   #             .word   5 empty_str
+0x8660: 73 70                         #             .ascii  "sp"
+0x8662: 06 00 44 8a                   #             .word   6 empty_str
+0x8666: 6c 6e                         #             .ascii  "ln"
+0x8668: 07 00 44 8a                   #             .word   7 empty_str
+0x866c: 72 30                         #             .ascii  "r0"
+0x866e: 00 00 44 8a                   #             .word   0 empty_str
+0x8672: 72 31                         #             .ascii  "r1"
+0x8674: 01 00 44 8a                   #             .word   1 empty_str
+0x8678: 72 32                         #             .ascii  "r2"
+0x867a: 02 00 44 8a                   #             .word   2 empty_str
+0x867e: 72 33                         #             .ascii  "r3"
+0x8680: 03 00 44 8a                   #             .word   3 empty_str
+0x8684: 72 34                         #             .ascii  "r4"
+0x8686: 04 00 44 8a                   #             .word   4 empty_str
+0x868a: 72 35                         #             .ascii  "r5"
+0x868c: 05 00 44 8a                   #             .word   5 empty_str
+0x8690: 72 36                         #             .ascii  "r6"
+0x8692: 06 00 44 8a                   #             .word   6 empty_str
+0x8696: 72 37                         #             .ascii  "r7"
+0x8698: 07 00 44 8a                   #             .word   7 empty_str
+0x869c: 63 70                         #             .ascii  "cp"
+0x869e: 08 00 b4 8a                   #             .word   8 uid_str
+0x86a2: 65 78                         #             .ascii  "ex"
+0x86a4: 09 00 b8 8a                   #             .word   9 ten_str
+0x86a8: 66 65                         #             .ascii  "fe"
+0x86aa: 0a 00 bc 8a                   #             .word   10 at_str
+0x86ae:                               # read_any_register_actual:
+0x86ae: 1d c8                         #             pushx   %r2
+0x86b0: 1d cc                         #             pushx   %r3
+0x86b2: 1d d0                         #             pushx   %r4                 ; wind the stack (%ln already pushed)
+0x86b4: 58 61 5c 60                   #             mov     %r3, 32             ; r3 = buffer
+0x86b8: 4a 01                         #             ldh     %r0, STREAM
+0x86ba: 0b 0c                         #             sth     %r0, %r3            ; *buffer = getchar()
+0x86bc: 50 61                         #             addx    %r3, 1
+0x86be: 4a 01                         #             ldh     %r0, STREAM
+0x86c0: 0b 0c                         #             sth     %r0, %r3            ; *(buffer + 1) = getchar()
+0x86c2: 51 61                         #             subx    %r3, 1              ; r3 = buffer, once again
+0x86c4: 58 b2                         #             movz    %r5, 18             ; i = 18
+0x86c6: 19 9c                         #             movx    %r4, %r7            ; r7 previously held &register_table
+0x86c8:                               # read_any_register_L1:
+0x86c8: 19 0c                         #             movx    %r0, %r3            ; arg0 = buffer
+0x86ca: 19 30                         #             movx    %r1, %r4            ; arg1 = register_table[18-i].name
+0x86cc: 59 42                         #             movx    %r2, 2              ; arg2 = 2
+0x86ce: ba 36                         #             call    strncmp             ; r0 = 0 iff string at buffer == string at name
+0x86d0: 47 1f                         #             testh   %r0, -1             ; is r0 == 0?
+0x86d2: 80 0c                         #             jz      read_any_register_L3; found match! break out of loop
+0x86d4: 50 86                         #             addx    %r4, 6              ; point r4 at next register table entry
+0x86d6: 41 a1                         #             subh    %r5, 1              ; --i
+0x86d8: 9b f0                         #             jge     read_any_register_L1; loop as long as i is still >= 0
+0x86da:                               # read_any_register_L2:                   ; but if i < 0, there were no matches. Die.
+0x86da: 59 01                         #             mov     %r0, 1              ; r0 = INVALID_REGISTER_CODE
+0x86dc: b1 fc                         #             call    die
+0x86de:                               # read_any_register_L3:
+0x86de: 4a a1                         #             ldh     %r5, STREAM         ; cur = getchar() [in the C code, this is above the loop]
+0x86e0: 50 84                         #             addx    %r4, 4              ; point r4 at entry.remainder_to_consume
+0x86e2: 1a 30                         #             ldx     %r1, %r4            ; r1 = entry->remainder_to_consume
+0x86e4: b0 3a                         #             call    consume             ; r0 = 0 iff consume succeeds
+0x86e6: 47 1f                         #             testh   %r0, -1             ; is r0 == 0?
+0x86e8: 91 f2                         #             jnz     read_any_register_L2; call die(INVALID_REGISTER) if consume failed
+0x86ea: b1 b4                         #             call    cur_is_alphanum     ; r0 = is_alphanum(cur)
+0x86ec: 47 1f                         #             testh   %r0, -1             ; is r0 != 0?
+0x86ee: 91 ec                         #             jnz     read_any_register_L2; call die(INVALID_REGISTER) if is_alphanum(cur)
+0x86f0: 51 82                         #             subx    %r4, 2              ; point r4 at entry.number
+0x86f2: 1a 10                         #             ldx     %r0, %r4            ; return = entry->number
+0x86f4: 1c 98                         #             popx    %r4
+0x86f6: 1c 78                         #             popx    %r3
+0x86f8: 1c 58                         #             popx    %r2                 ; unwind
+0x86fa: 1c f8                         #             popx    %ln                 ; restore return address
+0x86fc: af ee                         #             ret
+0x86fe:                               # read_register:
+0x86fe: 1d dc                         #             pushx   %ln
+0x8700: bf 38                         #             call    read_any_register
+0x8702: 1c f8                         #             popx    %ln
+0x8704: 43 08                         #             cmph    %r0, 8
+0x8706: af ea                         #             retl                        ; return reg if it's < 8
+0x8708: 9e d2                         #             jmp     read_any_register_L2; otherwise, call die(INVALID_REGISTER)
+0x870a:                               # read_ctrl_register:
+0x870a: 1d dc                         #             pushx   %ln
+0x870c: bf 2c                         #             call    read_any_register
+0x870e: 1c f8                         #             popx    %ln
+0x8710: 43 08                         #             cmph    %r0, 8
+0x8712: af eb                         #             retge                       ; return reg if it's >= 8
+0x8714: 9e c6                         #             jmp     read_any_register_L2; otherwise, call die as above
+0x8716:                               # consume_L1:
+0x8716: 02 14                         #             rsubh   %r0, %r5            ; r0 = *check - cur
+0x8718: 4a a1                         #             ldh     %r5, STREAM         ; cur = getchar()
+0x871a: af e1                         #             retnz                       ; if match failed, return result
+0x871c: 50 21                         #             addx    %r1, 1              ; ++check
+0x871e:                               # consume:
+0x871e: 0a 04                         #             ldh     %r0, %r1            ; r0 = *check
+0x8720: 47 1f                         #             testh   %r0, -1             ; *check == 0?
+0x8722: 91 f4                         #             jnz     consume_L1          ; loop if *check != 0
+0x8724: af ee                         #             ret                         ; otherwise, return *check === 0
+0x8726:                               # match:
+0x8726: 02 14                         #     rsubh   %r0, %r5                    ; r0 = cur - c
+0x8728: 4a a1                         #     ldh     %r5, STREAM                 ; cur = getchar()
+0x872a: af ee                         #     ret
+0x872c:                               # read_opcode:
+0x872c: 1d dc                         #             pushx   %ln
+0x872e: 1d c8                         #             pushx   %r2
+0x8730: 1d cc                         #             pushx   %r3
+0x8732: 1d d0                         #             pushx   %r4
+0x8734: 59 00                         #             mov     %r0, 0              ; r.opcode = 0
+0x8736: 59 23                         #             mov     %r1, 3              ; r.state = STATE_TX
+0x8738: 58 41 5c 40                   #             mov     %r2, 32             ; r2 = buffer
+0x873c: 0b a8                         #             sth     %r5, %r2            ; *buffer = cur
+0x873e: 09 74                         #             movh    %r3, %r5            ; temporarily stash cur in r3
+0x8740: 4a a1                         #             ldh     %r5, STREAM         ; cur = getchar()
+0x8742: 50 41                         #             addx    %r2, 1              ; ++buffer
+0x8744: 0b a8                         #             sth     %r5, %r2            ; *buffer = cur
+0x8746: 58 83 5c 8a                   #             mov     %r4, 'j'            ; r4 = 'j' === 104
+0x874a: 03 70                         #             cmph    %r3, %r4            ; check if original cur was 'j'
+0x874c: 59 80                         #             mov     %r4, 0              ; trigger = HIT_J === 0
+0x874e: 80 96                         #             je      read_opcode_cond    ; jump to the cond part if so
+0x8750: 59 62                         #             mov     %r3, 2              ; size = 2
+0x8752: 59 82                         #             mov     %r4, 2              ; count = 2
+0x8754: 58 a1 5c a2 5c b6 5c a0       #             mov     %r5, opcode_tables  ; r5 = pointer to opcode tables
+0x875c:                               # read_opcode_sloop:
+0x875c: 58 01 5c 00                   #             mov     %r0, 32             ; arg 0 = buffer
+0x8760: 19 34                         #             mov     %r1, %r5            ; arg 1 = &table{2/3}[ix].name
+0x8762: 19 4c                         #             mov     %r2, %r3            ; arg 2 = size
+0x8764: b9 a0                         #             call    strncmp             ; r0 = (0 iff hit table)
+0x8766: 47 1f                         #             testh   %r0, -1             ; test for hit
+0x8768: 81 0c                         #             jnz     read_opcode_sstep   ; if not a hit, go to next step
+0x876a: 51 a1                         #             subx    %r5, 1              ; r5 = &table{2/3}[ix].opcode
+0x876c: 0a 14                         #             ldh     %r0, %r5            ; r.opcode = table{2/3}[ix].opcode
+0x876e: 59 25                         #             mov     %r1, 5              ; r.state = STATE_COMP
+0x8770: 4a a1                         #             ldh     %r5, STREAM         ; cur = getchar()
+0x8772: 8e c6                         #             jmp     read_opcode_unwind  ; return
+0x8774:                               # read_opcode_sstep:
+0x8774: 10 ac                         #             addx    %r5, %r3            ; tableptr += size
+0x8776: 50 a1                         #             addx    %r5, 1              ; tableptr += 1 [shift past next opcode]
+0x8778: 41 81                         #             subh    %r4, 1              ; --count
+0x877a: 9b e2                         #             jge     read_opcode_sloop   ; loop if count still >= 0
+0x877c: 43 62                         #             cmph    %r3, 2              ; check if size was 2 on that iteration
+0x877e: 59 84                         #             mov     %r4, 4              ; count = 4, size is "still" 3 (it's from the future)
+0x8780: 81 30                         #             jne     read_opcode_big     ; if not, stop the short loop
+0x8782: 59 63                         #             mov     %r3, 3              ; size = 3
+0x8784: 59 85                         #             mov     %r4, 5              ; count = 5
+0x8786: 58 01 5c 02                   #             mov     %r0, 34             ; r0 = buffer + 2
+0x878a: 4a 41                         #             ldh     %r2, STREAM         ; r2 = getchar()
+0x878c: 0b 40                         #             sth     %r2, %r0            ; *(buffer + 2) = r2
+0x878e: 9e ce                         #             jmp     read_opcode_sloop   ; continue checking short opcodes
+0x8790:                               # read_opcode_bstep:
+0x8790: 10 ac                         #             addx    %r5, %r3            ; tableptr += size
+0x8792: 50 a3                         #             addx    %r5, 3              ; tableptr += 3 [shift past opcode,state,trigger]
+0x8794: 41 81                         #             subh    %r4, 1              ; --count
+0x8796: 8b 20                         #             jge     read_opcode_bloop   ; loop now, if count still >= 0
+0x8798: 1c 58                         #             popx    %r2                 ; reload spilled cur into %r2
+0x879a: 43 63                         #             cmph    %r3, 3              ; was size still 3 on that iteration?
+0x879c: 81 8e                         #             jne     read_opcode_die     ; if not, we're out of things to check. Die.
+0x879e:                               # read_opcode_try4:
+0x879e: 58 01 5c 03                   #             mov     %r0, 35             ; r0 = buffer + 3
+0x87a2: 0b 40                         #             sth     %r2, %r0            ; *(buffer + 3) = cur
+0x87a4: 59 64                         #             mov     %r3, 4              ; size = 4
+0x87a6: 59 85                         #             mov     %r4, 5              ; count = 5
+0x87a8: 58 a1 5c a2 5c b7 5c bf       #             mov     %r5, opcode_table4_state
+0x87b0:                               # read_opcode_big:                        ; before jumping here, count was set to {4/5}
+0x87b0: 4a 41                         #             ldh     %r2, STREAM         ; get another character...
+0x87b2: 1d c8                         #             pushx   %r2                 ; and spill it, because we still need the table
+0x87b4: 50 a2                         #             addx    %r5, 2              ; was pointed at state, move it to name
+0x87b6:                               # read_opcode_bloop:
+0x87b6: 58 01 5c 00                   #             mov     %r0, 32             ; arg 0 = buffer
+0x87ba: 19 34                         #             mov     %r1, %r5            ; arg 1 = &table{3/4}[ix].name
+0x87bc: 19 4c                         #             mov     %r2, %r3            ; arg 2 = size
+0x87be: b9 46                         #             call    strncmp             ; r0 = (0 iff hit table)
+0x87c0: 47 1f                         #             testh   %r0, -1             ; test for hit
+0x87c2: 91 ce                         #             jnz     read_opcode_bstep   ; if no hit, go to next iteration
+0x87c4: 1c 58                         #             popx    %r2                 ; retrieve cur, which we spilled
+0x87c6: 51 a1                         #             subx    %r5, 1              ; move pointer to trigger
+0x87c8: 0a 94                         #             ldh     %r4, %r5            ; trigger = table[ix].trigger
+0x87ca: 43 82                         #             cmph    %r4, 2              ; trigger == HIT_MOV?
+0x87cc: 81 0a                         #             jne     read_opcode_chkcond ; if it's not, try checking if it's HIT_COND
+0x87ce: 09 08                         #             movh    %r0, %r2            ; but if it is, check cur (which we reloaded to r2)
+0x87d0: b0 f2                         #             call    is_not_opcode_suffix
+0x87d2: 47 1f                         #             testh   %r0, -1             ; test !is_opcode_suffix(cur)
+0x87d4: 91 ca                         #             jnz     read_opcode_try4    ; if holds, skip to trying length-4 names
+0x87d6:                               # read_opcode_chkcond:
+0x87d6: 51 a2                         #             subx    %r5, 2              ; move pointer from trigger to opcode
+0x87d8: 0a 14                         #             ldh     %r0, %r5            ; r.opcode = table[ix].opcode
+0x87da: 50 a1                         #             addx    %r5, 1              ; move pointer from opcode to state
+0x87dc: 0a 34                         #             ldh     %r1, %r5            ; r.state  = table[ix].state
+0x87de: 09 a8                         #             movh    %r5, %r2            ; restore cur to r5 from r2 (where it was reloaded)
+0x87e0: 43 81                         #             cmph    %r4, 1              ; trigger == HIT_COND?
+0x87e2: 81 56                         #             jne     read_opcode_unwind  ; if no, go to stack unwind and return
+0x87e4:                               # read_opcode_cond:
+0x87e4: 1d c4                         #             pushx   %r1                 ; spill r.state
+0x87e6: 1d c0                         #             pushx   %r0                 ; spill r.opcode
+0x87e8: 59 42                         #             mov     %r2, 2              ; i = 2
+0x87ea: 58 61 5c 60                   #             mov     %r3, 32             ; r3 = buffer
+0x87ee:                               # read_opcode_bfrcond:
+0x87ee: b0 d2                         #             call    cur_is_not_opcode_suffix
+0x87f0: 47 1f                         #             testh   %r0, -1             ; test !is_opcode_suffix(cur)
+0x87f2: 80 0c                         #             jz      read_opcode_condtbl ; if it doesn't hold (cur is an opcode suffix)
+0x87f4: 0b ac                         #             sth     %r5, %r3            ; *buffer = cur
+0x87f6: 4a a1                         #             ldh     %r5, STREAM         ; cur = getchar()
+0x87f8: 50 61                         #             addx    %r3, 1              ; ++buffer
+0x87fa: 41 41                         #             subh    %r2, 1              ; --i
+0x87fc: 9d f2                         #             jg      read_opcode_bfrcond ; continue buffering if i > 0
+0x87fe:                               # read_opcode_condtbl:
+0x87fe: 59 40                         #             mov     %r2, 0              ; clear r2
+0x8800: 0b 4c                         #             sth     %r2, %r3            ; *buffer = 0
+0x8802: 58 61 5c 62 5c 79 5c 69       #             mov     %r3, cond_table_name ; get pointer to cond_table[0].name in r3
+0x880a: 19 50                         #             mov     %r2, %r4            ; r2 = trigger
+0x880c: 00 48                         #             addh    %r2, %r2            ; r2 = trigger * 2
+0x880e: 00 48                         #             addh    %r2, %r2            ; r2 = trigger * 4
+0x8810: 10 68                         #             addx    %r3, %r2            ; r3 = cond_table[trigger].name
+0x8812: 58 54                         #             movz    %r2, 20
+0x8814: 02 88                         #             rsubh   %r4, %r2            ; trigger = 20 - trigger
+0x8816:                               # read_opcode_cndloop:
+0x8816: 58 01 5c 00                   #             mov     %r0, 32             ; arg 0 = buffer
+0x881a: 19 2c                         #             movx    %r1, %r3            ; arg 1 = cond_table[ix].name
+0x881c: 59 43                         #             mov     %r2, 3              ; arg 2 = 3
+0x881e: b8 e6                         #             call    strncmp             ; r0 = (0 iff hit table)
+0x8820: 47 1f                         #             testh   %r0, -1             ; test if hit
+0x8822: 80 0c                         #             jz      read_opcode_hitcond ; if we hit, go leave (finally)
+0x8824: 50 64                         #             addx    %r3, 4              ; otherwise, move to next cond table entry
+0x8826: 41 81                         #             subh    %r4, 1              ; --trigger
+0x8828: 9d ee                         #             jg      read_opcode_cndloop ; continue looping if trigger > 0
+0x882a:                               # read_opcode_die:
+0x882a: 59 00                         #             mov     %r0, 0
+0x882c: b0 ac                         #             call    die                 ; otherwise, we are out of options. Die.
+0x882e:                               # read_opcode_hitcond:
+0x882e: 1c 18                         #             popx    %r0                 ; reload r.opcode
+0x8830: 1c 38                         #             popx    %r1                 ; reload r.state
+0x8832: 51 61                         #             subx    %r3, 1              ; move back from name to opcode
+0x8834: 0a 6c                         #             ldh     %r3, %r3            ; read in the opcode
+0x8836: 00 0c                         #             addh    %r0, %r3            ; r.opcode += cond_table[hit].opcode
+0x8838:                               # read_opcode_unwind:
+0x8838: 1c 98                         #             popx    %r4
+0x883a: 1c 78                         #             popx    %r3
+0x883c: 1c 58                         #             popx    %r2
+0x883e: 1c f8                         #             popx    %ln
+0x8840: af ee                         #             ret
+0x8842:                               # validate_s5:
+0x8842: 1d c0                         #             pushx   %r0
+0x8844: 1d c4                         #             pushx   %r1
+0x8846: 58 30                         #             movz    %r1, 16
+0x8848: 20 04                         #             addd    %r0, %r1            ; imm + 16
+0x884a: 10 24                         #             addx    %r1, %r1            ; r1 = 32
+0x884c: 23 04                         #             cmpd    %r0, %r1            ; compare (imm + 16) against 32
+0x884e: 1c 38                         #             popx    %r1                 ; if 0 <= (imm + 16) < 32, then imm
+0x8850: 1c 18                         #             popx    %r0                 ; is a valid s5 immediate. The compare
+0x8852: af ee                         #             ret                         ; will set the 'b' condition if so.
+0x8854:                               # cur_is_alpha:
+0x8854: 19 14                         #             mov     %r0, %r5
+0x8856:                               # is_alpha:
+0x8856: 58 22 5c 21                   #             mov     %r1, 65             ; r1 = 'A'
+0x885a: 03 04                         #             cmph    %r0, %r1
+0x885c: 84 1e                         #             jb      is_alpha_ret_false  ; return false if r0 < 'A'
+0x885e: 40 2f                         #             addh    %r1, 15
+0x8860: 40 2a                         #             addh    %r1, 10             ; r1 = 'Z'
+0x8862: 03 04                         #             cmph    %r0, %r1            ; c <=? 'Z'
+0x8864: 88 1a                         #             jbe     is_alpha_ret_true
+0x8866: 40 25                         #             addh    %r1, 5              ; r1 = '_'
+0x8868: 03 04                         #             cmph    %r0, %r1            ; c ==? '_'
+0x886a: 80 14                         #             je      is_alpha_ret_true
+0x886c: 40 22                         #             addh    %r1, 2              ; r1 = 'a'
+0x886e: 03 04                         #             cmph    %r0, %r1            ; c <? 'a'
+0x8870: 84 0a                         #             jb      is_alpha_ret_false
+0x8872: 40 2f                         #             addh    %r1, 15
+0x8874: 40 2a                         #             addh    %r1, 10             ; r1 = 'z'
+0x8876: 03 04                         #             cmph    %r0, %r1            ; c <=? 'z'
+0x8878: 88 06                         #             jbe     is_alpha_ret_true   ; fall through to ret_true otherwise
+0x887a:                               # is_eol_ret_false:
+0x887a:                               # is_num_ret_false:
+0x887a:                               # is_alpha_ret_false:
+0x887a: 59 00                         #             mov     %r0, 0
+0x887c: af ee                         #             ret
+0x887e:                               # is_eol_ret_true:
+0x887e:                               # is_num_ret_true:
+0x887e:                               # is_alpha_ret_true:
+0x887e:                               # is_imm_start_ret_true:
+0x887e: 59 01                         #             mov     %r0, 1
+0x8880: af ee                         #             ret
+0x8882:                               # cur_is_imm_start:
+0x8882: 19 14                         #             mov     %r0, %r5
+0x8884:                               # is_imm_start:
+0x8884: 58 21 5c 2d                   #             mov     %r1, '-'
+0x8888: 03 04                         #             cmph    %r0, %r1            ; c ==? '-'
+0x888a: 90 f4                         #             je      is_imm_start_ret_true
+0x888c: 40 23                         #             addh    %r1, 3              ; r1 = '0'
+0x888e: 8e 08                         #             jmp     is_num_have_48      ; this entrypoint is less common
+0x8890:                               # cur_is_num:
+0x8890: 19 14                         #             mov     %r0, %r5
+0x8892:                               # is_num:
+0x8892: 58 21 5c 30                   #             mov     %r1, '0'
+0x8896:                               # is_num_have_48:
+0x8896: 01 04                         #             subh    %r0, %r1            ; c = c - '0'
+0x8898: 43 0a                         #             cmph    %r0, 10             ; c <? '9'+1
+0x889a: 94 e4                         #             jb      is_num_ret_true
+0x889c: 9e de                         #             jmp     is_num_ret_false
+0x889e:                               # cur_is_alphanum:
+0x889e:                               # cur_is_name_char:
+0x889e: 19 14                         #             mov     %r0, %r5
+0x88a0:                               # is_alphanum:
+0x88a0:                               # is_name_char:
+0x88a0: 1d dc                         #             pushx   %ln                 ; we call functions, save %ln
+0x88a2: 1d c0                         #             pushx   %r0                 ; save c
+0x88a4: bf b2                         #             call    is_alpha            ; r0 = is_alpha(c)
+0x88a6: 47 01                         #             testh   %r0, 1              ; test is_alpha(c)
+0x88a8: 1c 38                         #             popx    %r1                 ; r1 = c
+0x88aa: 81 06                         #             jnz     is_name_char_ret    ; return if is_alpha(c)
+0x88ac: 09 04                         #             movh    %r0, %r1            ; r0 = c
+0x88ae: bf e4                         #             call    is_num              ; r0 = is_num(c)
+0x88b0:                               # is_name_char_ret:
+0x88b0: 1c f8                         #             popx    %ln
+0x88b2: af ee                         #             ret
+0x88b4:                               # cur_is_eol:
+0x88b4: 19 14                         #             mov     %r0, %r5
+0x88b6:                               # is_eol:
+0x88b6: 43 0a                         #             cmph    %r0, 10             ; c ==? '\n'
+0x88b8: 90 c6                         #             je      is_eol_ret_true
+0x88ba: 43 00                         #             cmph    %r0, 0              ; c ==? '\0'
+0x88bc: 90 c2                         #             je      is_eol_ret_true
+0x88be: 9e bc                         #             jmp     is_eol_ret_false
+0x88c0:                               # cur_is_not_opcode_suffix:
+0x88c0: 19 14                         #             mov     %r0, %r5
+0x88c2:                               # is_not_opcode_suffix:
+0x88c2: 19 20                         #             mov     %r1, %r0            ; swap registers
+0x88c4: 58 03 5c 18                   #             mov     %r0, 'x'            ; r0 = 'x' = 120
+0x88c8: 02 04                         #             rsubh   %r0, %r1            ; r0 = c - 'x'
+0x88ca: af e0                         #             retz                        ; if 0, c == 'x' which is valid, return 0
+0x88cc: 41 10                         #             subh    %r0, -16            ; r0 = (c - 'x') - ('h' - 'x') === c - 'h'
+0x88ce: af e0                         #             retz                        ; same, but == 'h'
+0x88d0: 40 04                         #             addh    %r0, 4              ; r0 = (c - 'h') + ('h' - 'd') === c - 'd'
+0x88d2: af e0                         #             retz                        ; same, but == 'd'
+0x88d4: 19 04                         #             mov     %r0, %r1            ; r0 = c
+0x88d6: 9e 80                         #             jmp     is_alpha            ; tail-call is_alpha. Our return sense is inverted,
+0x88d8:                               # die:
+0x88d8: b0 1a                         #             call    die_actual          ; %r7 = &msg_header
+0x88da:                               # msg_header:                             ; char **msg_header
+0x88da: 3c 8a                         #             .word   invalid_msg
+0x88dc: 3c 8a                         #             .word   invalid_msg
+0x88de: 3c 8a                         #             .word   invalid_msg
+0x88e0: 45 8a                         #             .word   out_of_msg
+0x88e2: 45 8a                         #             .word   out_of_msg
+0x88e4: 44 8a                         #             .word   empty_msg
+0x88e6:                               # msg_body:                               ; char **msg_body
+0x88e6: 4d 8a                         #             .word   syntax_msg
+0x88e8: 54 8a                         #             .word   register_msg
+0x88ea: 5d 8a                         #             .word   immediate_msg
+0x88ec: 67 8a                         #             .word   range_msg
+0x88ee: 6d 8a                         #             .word   memory_msg
+0x88f0: 74 8a                         #             .word   unknown_symbol_msg
+0x88f2:                               # die_actual:
+0x88f2: 19 44                         #             movx    %r2, %r1            ; save name in r2 which is stable (r1 is not)
+0x88f4: 19 bc                         #             movx    %r5, %r7            ; save &msg_header
+0x88f6: 00 00                         #             addh    %r0, %r0            ; ofs = code << 1
+0x88f8: 10 1c                         #             addx    %r0, %r7            ; r0 = &(msg_header[code])
+0x88fa: 19 60                         #             movx    %r3, %r0            ; save &(msg_header[code]) for later
+0x88fc: 1a 00                         #             ldx     %r0, %r0            ; r0 = msg_header[code]
+0x88fe: b0 ae                         #             call    puts                ; puts(msg_header[code])
+0x8900: 19 0c                         #             movx    %r0, %r3            ; retrieve &msg_header[code]
+0x8902: 50 0c                         #             addx    %r0, 12             ; r0 = &msg_body[code]
+0x8904: 1a 00                         #             ldx     %r0, %r0            ; r0 = msg_body[code]
+0x8906: b0 a6                         #             call    puts                ; puts(msg_body[code])   additionally r1 = 0
+0x8908: 11 74                         #             subx    %r3, %r5            ; r3 = &msg_header[code] - msg_header, eqv. 2*code
+0x890a: 53 6a                         #             cmpx    %r3, 10             ; compare 2*code against 10
+0x890c: 81 0c                         #             jne     die_line            ; if 2*code != 10, we're done and can print line and halt
+0x890e: 19 08                         #             movx    %r0, %r2            ; move name to argument 0 (it was saved in r2 and is untouched)
+0x8910: 58 50                         #             movz    %r2, 16             ; r2 = 16
+0x8912: 10 40                         #             addx    %r2, %r0            ; r2 = &(name + 16)
+0x8914: 0b 28                         #             sth     %r1, %r2            ; *(name + 16) = 0,  r1 is still 0 since call to puts
+0x8916: b0 96                         #             call    puts                ; puts(name)
+0x8918:                               # die_line:
+0x8918: b0 0c                         #             call    die_line_with_msg
+0x891a: 20 61 74 20 6c 69 6e 65 20 00 #             .asciiz " at line "
+0x8924:                               # die_line_with_msg:
+0x8924: 19 1c                         #             mov     %r0, %ln
+0x8926: b0 86                         #             call    puts                ; print " at line "
+0x8928: 58 01 5c 00                   #             mov     %r0, BUFFER_PTR     ; arg 0 = buf
+0x892c: 58 41 5c 50 5c 40 5c 4a       #             mov     %r2, 0xC00A         ; &static_data.src_lineno
+0x8934: 1a 48                         #             ldx     %r2, %r2            ; arg 2 = static_data->src_lineno
+0x8936: b0 38                         #             call    utoa                ; convert lineno to string in buffer
+0x8938: 58 01 5c 00                   #             mov     %r0, BUFFER_PTR     ; arg 0 = buf, again
+0x893c: b0 70                         #             call    puts                ; print the line number
+0x893e: 8e 00                         #             hlt                         ; crash the kernel.
+0x8940:                               # udiv16:
+0x8940: 1d cc                         #             pushx   %r3                 ; save r3
+0x8942: 59 20                         #             mov     %r1, 0              ; initial partial remainder is 0
+0x8944: 58 70                         #             mov     %r3, 16             ; number of iterations to perform
+0x8946:                               # udiv16_loop:
+0x8946: 10 24                         #             addx    %r1, %r1            ; shift the partial remainder one bit left
+0x8948: 10 00                         #             addx    %r0, %r0            ; shift dividend left one bit thru carry
+0x894a: 85 04                         #             jnc     udiv16_no_qbit      ; if no carry, skip moving bit into partial rem
+0x894c: 54 21                         #             orx     %r1, 1              ; move carry into bottom bit of shifted partial rem
+0x894e:                               # udiv16_no_qbit:
+0x894e: 11 28                         #             sub     %r1, %r2            ; attempt subtraction from partial remainder
+0x8950: 85 06                         #             jnc     udiv16_no_borrow    ; if that subtraction succeeded, set bit of quotient
+0x8952: 10 28                         #             add     %r1, %r2            ; otherwise, restore partial remainder
+0x8954: 8e 04                         #             jmp     udiv16_step         ; and skip setting quotient bit
+0x8956:                               # udiv16_no_borrow:
+0x8956: 54 01                         #             orx     %r0, 1              ; set bottom bit of the dividend (growing quotient)
+0x8958:                               # udiv16_step:
+0x8958: 41 61                         #             subh    %r3, 1              ; decrement counter
+0x895a: 99 ec                         #             ja      udiv16_loop         ; continue as long as counter remains > 0
+0x895c: 1c 78                         #             popx    %r3                 ; otherwise we're done. Restore r3
+0x895e: af ee                         #             ret
+0x8960:                               # itoa:
+0x8960: 57 5f                         #             testx   %r2, -1             ; test the input number for sign
+0x8962: 83 0c                         #             jnn     utoa                ; if it's already positive, go straight to utoa
+0x8964: 58 21 5c 2d                   #             mov     %r1, '-'            ; otherwise, prepare a minus sign
+0x8968: 0b 20                         #             sth     %r1, %r0            ; to put in the buffer
+0x896a: 50 01                         #             addx    %r0, 1              ; buf++
+0x896c: 52 40                         #             rsubx   %r2, 0              ; d = -d
+0x896e:                               # utoa:
+0x896e: 1d dc                         #             pushx   %ln
+0x8970: 1d d0                         #             pushx   %r4                 ; wind
+0x8972: 1d c0                         #             pushx   %r0                 ; save original value of buffer
+0x8974: 58 81 5c 90                   #             mov     %r4, '0'            ; stash '0' for quick access
+0x8978: 19 60                         #             mov     %r3, %r0            ; p = buf
+0x897a: 19 08                         #             mov     %r0, %r2            ; dividend = d
+0x897c: 59 4a                         #             mov     %r2, 10             ; divisor = base = 10
+0x897e:                               # itoa_loop:
+0x897e: bf c2                         #             call    udiv16              ; r0 = quotient, r1 = remainder, r2 still 10
+0x8980: 00 30                         #             addh    %r1, %r4            ; chr = remainder + '0'
+0x8982: 0b 2c                         #             sth     %r1, %r3            ; *p = chr
+0x8984: 50 61                         #             addx    %r3, 1              ; p++
+0x8986: 57 1f                         #             testx   %r0, -1             ; test quotient for zero
+0x8988: 91 f6                         #             jnz     itoa_loop           ; loop as long as quotient is not yet zero
+0x898a: 0b 0c                         #             sth     %r0, %r3            ; *p = 0, terminate the string
+0x898c: 51 61                         #             subx    %r3, 1              ; p2 = p - 1
+0x898e: 1c 18                         #             popx    %r0                 ; p1 = buf
+0x8990: 1c 98                         #             popx    %r4
+0x8992: 1c f8                         #             popx    %ln                 ; fully unwind the stack to prepare for
+0x8994: 8e 0e                         #             jmp     itoa_rev_check      ; enter loop at check
+0x8996:                               # itoa_rev_loop:
+0x8996: 0a 40                         #             ldh     %r2, %r0            ; tmp = *p1
+0x8998: 0a 2c                         #             ldh     %r1, %r3            ; r1 = *p2
+0x899a: 0b 20                         #             sth     %r1, %r0            ; *p1 = *p2
+0x899c: 0b 4c                         #             sth     %r2, %r3            ; *p2 = tmp
+0x899e: 50 01                         #             addx    %r0, 1              ; p1++
+0x89a0: 51 61                         #             subx    %r3, 1              ; p2--
+0x89a2:                               # itoa_rev_check:
+0x89a2: 13 0c                         #             cmpx    %r0, %r3            ; p1 <? p2
+0x89a4: 94 f2                         #             jb      itoa_rev_loop       ; loop if yes
+0x89a6: af ee                         #             ret                         ; otherwise we're done, return.
+0x89a8:                               # puts_L1:
+0x89a8: 4b 23                         #             sth     %r1, OUTPUT         ; putchar(*str)
+0x89aa: 50 01                         #             addx    %r0, 1              ; ++str
+0x89ac:                               # puts:
+0x89ac: 0a 20                         #             ldh     %r1, %r0            ; r1 = *str
+0x89ae: 47 3f                         #             testh   %r1, -1             ; test *str
+0x89b0: 91 f8                         #             jnz     puts_L1             ; loop if *str != 0
+0x89b2: af ee                         #             ret                         ; return if *str == 0
+0x89b4:                               # syscall_exit:
+0x89b4: 1d c4                         #             pushx   %r1                     ; save status
+0x89b6: b0 1e                         #             call    syscall_exit_with_msg   ; get msg into ln
+0x89b8: 50 72 6f 67 72 61 6d 20 65 78 69 74 65 64 20 77 69 74 68 20 73 74 61 74 75 73 20 00#             .asciiz "Program exited with status "
+0x89d4:                               # syscall_exit_with_msg:
+0x89d4: 19 1c                         #             mov     %r0, %r7            ; arg 0 = msg
+0x89d6: bf d6                         #             call    puts                ; print the msg
+0x89d8: 1c 58                         #             popx    %r2                 ; arg 2 = status
+0x89da: 58 01 5c 10 5c 01 5c 00       #             mov     %r0, 0xC020         ; arg 0 = runtime buffer after kernel data
+0x89e2: 19 80                         #             mov     %r4, %r0            ; save buffer addr
+0x89e4: bf 8a                         #             call    utoa                ; write str(code) into buffer
+0x89e6: 19 10                         #             mov     %r0, %r4            ; arg 0 = buffer again
+0x89e8: bf c4                         #             call    puts                ; print the code
+0x89ea: 8e 00                         #             hlt                         ; terminate
+0x89ec:                               # syscall_putuint:
+0x89ec:                               # syscall_putsint:
+0x89ec: 1d c8                         #             pushx   %r2                 ; wind stack to save all user registers that we would clobber
+0x89ee: 1d cc                         #             pushx   %r3
+0x89f0: 1d d0                         #             pushx   %r4
+0x89f2: 43 02                         #             cmph    %r0, 2              ; compare 2*service_no to 2. If it's 2, print unsigned.
+0x89f4: 19 44                         #             movx    %r2, %r1            ; arg 2 = number
+0x89f6: 58 01 5c 10 5c 01 5c 00       #             mov     %r0, 0xC020         ; arg 0 = runtime buffer after kernel data
+0x89fe: 19 80                         #             movx    %r4, %r0            ; and save this address
+0x8a00: 81 06                         #             jne     syscall_do_signed   ; if service no is not 2, use itoa
+0x8a02: bf 6c                         #             call    utoa                ; otherwise use utoa
+0x8a04: 8e 04                         #             jmp     syscall_have_a
+0x8a06:                               # syscall_do_signed:
+0x8a06: bf 5a                         #             call    itoa
+0x8a08:                               # syscall_have_a:                         ; now the buffer has the rep of the number to print
+0x8a08: 19 10                         #             movx    %r0, %r4            ; get its address back
+0x8a0a: bf a2                         #             call    puts                ; and print the number
+0x8a0c: 1c 98                         #             popx    %r4
+0x8a0e: 1c 78                         #             popx    %r3
+0x8a10: 1c 58                         #             popx    %r2                 ; unwind
+0x8a12: 8e 1c                         #             jmp     syscall_return
+0x8a14:                               # syscall_puts:
+0x8a14: 19 04                         #             movx    %r0, %r1            ; arg 0 = message
+0x8a16: bf 96                         #             call    puts                ; print it
+0x8a18: 8e 16                         #             jmp     syscall_return
+0x8a1a:                               # syscall_sbrk:
+0x8a1a: 58 e1 5c f0 5c e0 5c f0       #             mov     %r7, STATIC_DATA_PTR ; r7 = &static_data.break
+0x8a22: 1a 1c                         #             ldx     %r0, %r7            ; r0 = static_data->break
+0x8a24: 10 20                         #             addx    %r1, %r0            ; r1 = static_data->break + numbytes
+0x8a26: 50 23                         #             addx    %r1, 3
+0x8a28: 56 3c                         #             andx    %r1, -4             ; dword align the new break
+0x8a2a: 1b 3c                         #             stx     %r1, %r7            ; record the new break
+0x8a2c: 8e 02                         #             jmp     syscall_return
+0x8a2e:                               # syscall_return:
+0x8a2e: 1c f8                         #             popx    %ln                 ; restore our return address
+0x8a30: 58 c1 5c d0 5c c0 5c ca       #             mov     %sp, 0xC00A         ; &static_data->user_sp
+0x8a38: 1a d8                         #             ldx     %sp, %sp            ; %sp = static_data->user_sp
+0x8a3a: af ee                         #             ret
+0x8a3c:                               # invalid_msg:
+0x8a3c: 69 6e 76 61 6c 69 64 20       #             .ascii  "invalid "
+0x8a44:                               # empty_str:
+0x8a44:                               # empty_msg:                  ; share the NUL-terminator to get empty string
+0x8a44: 00                            #             .half   0
+0x8a45:                               # out_of_msg:
+0x8a45: 6f 75 74 20 6f 66 20 00       #             .asciiz "out of "
+0x8a4d:                               # syntax_msg:
+0x8a4d: 73 79 6e 74 61 78 00          #             .asciiz "syntax"
+0x8a54:                               # register_msg:
+0x8a54: 72 65 67 69 73 74 65 72 00    #             .asciiz "register"
+0x8a5d:                               # immediate_msg:
+0x8a5d: 69 6d 6d 65 64 69 61 74 65 00 #             .asciiz "immediate"
+0x8a67:                               # range_msg:
+0x8a67: 72 61 6e 67 65 00             #             .asciiz "range"
+0x8a6d:                               # memory_msg:
+0x8a6d: 6d 65 6d 6f 72 79 00          #             .asciiz "memory"
+0x8a74:                               # unknown_symbol_msg:
+0x8a74: 75 6e 6b 6e 6f 77 6e 20 73 79 6d 62 6f 6c 20 00#             .asciiz "unknown symbol "
+0x8a84:                               # completed_assembly_msg:
+0x8a84: 61 73 73 65 6d 62 6c 79 20 63 6f 6d 70 6c 65 74 65 21 0a 00#             .asciiz "assembly complete!\n"
+0x8a98:                               # exit_with_status_msg:
+0x8a98: 70 72 6f 67 72 61 6d 20 65 78 69 74 65 64 20 77 69 74 68 20 73 74 61 74 75 73 20 00#             .asciiz "program exited with status "
+0x8ab4:                               # uid_str:
+0x8ab4: 75 69 64 00                   #             .asciiz "uid"
+0x8ab8:                               # ten_str:
+0x8ab8: 74 65 6e 00                   #             .asciiz "ten"
+0x8abc:                               # at_str:
+0x8abc: 61 74 00                      #             .asciiz "at"
+0x8abf:                               # opcode_table2:
+0x8abf: 04                            #             .half   4
+0x8ac0:                               # opcode_tables:                  ; pointer directly to 'name'
+0x8ac0: 6f 72                         #             .ascii  "or"
+0x8ac2: 0a                            #             .half   10
+0x8ac3: 6c 64                         #             .ascii  "ld"
+0x8ac5: 0b                            #             .half   11
+0x8ac6: 73 74                         #             .ascii  "st"
+0x8ac8:                               # opcode_table3short:
+0x8ac8: 00                            #             .half   0
+0x8ac9: 61 64 64                      #             .ascii  "add"
+0x8acc: 01                            #             .half   1
+0x8acd: 73 75 62                      #             .ascii  "sub"
+0x8ad0: 03                            #             .half   3
+0x8ad1: 63 6d 70                      #             .ascii  "cmp"
+0x8ad4: 05                            #             .half   5
+0x8ad5: 78 6f 72                      #             .ascii  "xor"
+0x8ad8: 06                            #             .half   6
+0x8ad9: 61 6e 64                      #             .ascii  "and"
+0x8adc: 0c                            #             .half   12
+0x8add: 73 6c 6f                      #             .ascii  "slo"
+0x8ae0:                               # opcode_table3:
+0x8ae0: 09 07 02                      #             .half   9   7   2
+0x8ae3: 6d 6f 76                      #             .ascii  "mov"
+0x8ae6: 0c 04 03                      #             .half   12  4   3
+0x8ae9: 70 6f 70                      #             .ascii  "pop"
+0x8aec: 0e 0b 03                      #             .half   14  11  3
+0x8aef: 68 6c 74                      #             .ascii  "hlt"
+0x8af2: 0f 0b 03                      #             .half   15  11  3
+0x8af5: 6e 6f 70                      #             .ascii  "nop"
+0x8af8: 10 0b 01                      #             .half   16  11  1
+0x8afb: 72 65 74                      #             .ascii  "ret"
+0x8afe:                               # opcode_table4:
+0x8afe: 02                            #             .half   2
+0x8aff:                               # opcode_table4_state:
+0x8aff: 05 03                         #             .half   5   3
+0x8b01: 72 73 75 62                   #             .ascii  "rsub"
+0x8b05: 07 05 03                      #             .half   7   5   3
+0x8b08: 74 65 73 74                   #             .ascii  "test"
+0x8b0c: 08 05 03                      #             .half   8   5   3
+0x8b0f: 6d 6f 76 7a                   #             .ascii  "movz"
+0x8b13: 09 05 03                      #             .half   9   5   3
+0x8b16: 6d 6f 76 73                   #             .ascii  "movs"
+0x8b1a: 0d 02 03                      #             .half   13  2   3
+0x8b1d: 70 75 73 68                   #             .ascii  "push"
+0x8b21: 10 03 01                      #             .half   16  3   1
+0x8b24: 63 61 6c 6c                   #             .ascii  "call"
+0x8b28:                               # cond_table:
+0x8b28: 0e                            #             .half   14
+0x8b29:                               # cond_table_name:
+0x8b29: 6d 70 00                      #             .asciiz "mp"
+0x8b2c: 00                            #             .half   0
+0x8b2d: 7a 00 00                      #             .asciiz "z\0"
+0x8b30: 00                            #             .half   0
+0x8b31: 65 00 00                      #             .asciiz "e\0"
+0x8b34: 01                            #             .half   1
+0x8b35: 6e 7a 00                      #             .asciiz "nz"
+0x8b38: 01                            #             .half   1
+0x8b39: 6e 65 00                      #             .asciiz "ne"
+0x8b3c: 02                            #             .half   2
+0x8b3d: 6e 00 00                      #             .asciiz "n\0"
+0x8b40: 03                            #             .half   3
+0x8b41: 6e 6e 00                      #             .asciiz "nn"
+0x8b44: 04                            #             .half   4
+0x8b45: 63 00 00                      #             .asciiz "c\0"
+0x8b48: 04                            #             .half   4
+0x8b49: 62 00 00                      #             .asciiz "b\0"
+0x8b4c: 05                            #             .half   5
+0x8b4d: 6e 63 00                      #             .asciiz "nc"
+0x8b50: 05                            #             .half   5
+0x8b51: 61 65 00                      #             .asciiz "ae"
+0x8b54: 06                            #             .half   6
+0x8b55: 6f 00 00                      #             .asciiz "o\0"
+0x8b58: 07                            #             .half   7
+0x8b59: 6e 6f 00                      #             .asciiz "no"
+0x8b5c: 08                            #             .half   8
+0x8b5d: 62 65 00                      #             .asciiz "be"
+0x8b60: 09                            #             .half   9
+0x8b61: 61 00 00                      #             .asciiz "a\0"
+0x8b64: 0a                            #             .half   10
+0x8b65: 6c 00 00                      #             .asciiz "l\0"
+0x8b68: 0b                            #             .half   11
+0x8b69: 67 65 00                      #             .asciiz "ge"
+0x8b6c: 0c                            #             .half   12
+0x8b6d: 6c 65 00                      #             .asciiz "le"
+0x8b70: 0d                            #             .half   13
+0x8b71: 67 00 00                      #             .asciiz "g\0"
+0x8b74: 0e                            #             .half   14
+0x8b75: 00 00 00                      #             .asciiz "\0\0"

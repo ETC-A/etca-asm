@@ -1,0 +1,10 @@
+0x8000: 59 20                         #     movx %rx1,0
+0x8002: 58 02 5c 17 5c 1f             #     mov  %rx0,0x0aff
+0x8008: 1b 04                         #     movx [%rx1],%rx0
+0x800a: 1a 44                         #     movx %rx2,[%rx1]
+0x800c: 0a 64                         #     movh %rh3,[%rh1]
+0x800e: 50 21                         #     addx %rx1,1
+0x8010: 0a 84                         #     movh %rh4,[%rh1]
+0x8012: 0b 04                         #     movh [%rh1],%rh0 ; note 1: not word-aligned
+0x8014:                               # end:
+0x8014: 8e 00                         #     jmp  end
