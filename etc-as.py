@@ -17,7 +17,7 @@ def assemble(in_file: str, out_file: str):
   worker.context.modes=modes
   worker.context.reload_extensions()
 
-  with open(in_file,'r') as f:
+  with open(in_file,'r', encoding="utf-8") as f:
     res = worker.n_pass(f.read())
 
   if   mformat=='binary':
@@ -43,24 +43,21 @@ def output_as_tc_8(res, out_file):
 
 def output_as_tc_64(res, out_file):
   with open(out_file,'w') as f:
-    ct = 0
     bs = b''
     waiting = []
     def do_print():
-      nonlocal ct,bs,waiting
+      nonlocal bs,waiting
       for i in waiting:
         f.write(f"# {i.raw_line}\n")
-      f.write(f"0x{int.from_bytes(bs,'little'):0{2*ct}x}\n")
-      ct = 0
-      bs = b''
+      f.write(f"0x{int.from_bytes(bs[:8],'little'):0{16}x}\n")
+      bs = bs[8:]
       waiting = []
     for instr in res.output_with_aligns():
-      ct += len(instr.binary)
       waiting.append(instr)
       bs += instr.binary
-      if ct == 8:
+      while len(bs) >= 8:
         do_print()
-    if len(bs) > 0:
+    while len(bs) > 0:
       do_print()
 
 def output_as_annotated(res, out_file):
