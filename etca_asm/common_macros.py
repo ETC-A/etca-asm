@@ -16,7 +16,9 @@ def split_into_bit_groups(imm):
 @common_macros.inst('"mov" register_raw "," immediate')
 def mov_large_immediate(context, reg, imm):
     reject_msg = f'Immediate is too large to fit in a register: {imm}'
-    if -2**15 <= imm <= 2**16 - 1:
+    if -2**7 <= imm <= 2**8 - 1 and 'h':
+        size = 'h'
+    elif -2**15 <= imm <= 2**16 - 1:
         size = 'x'
     elif -2**31 <= imm <= 2**32 - 1:
         reject(not any(map(lambda x: x.strid == 'dword_operations', context.enabled_extensions)), reject_msg)
