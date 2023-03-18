@@ -1,4 +1,4 @@
-from etca_asm.core import Extension, reject, Context
+from etc_as.core import Extension, reject, Context
 
 common_macros = Extension(None, "common_macros", "Common Macros", True)
 
