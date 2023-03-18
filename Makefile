@@ -75,9 +75,6 @@ build: $(patsubst %, $(ETC_AS_BIN)/%, $(install_bins)) \
 all_bin_sources := $(shell find $(ETC_AS_BIN) -type f | sed 's|^$(ETC_AS_BIN)/||')
 all_lib_sources := $(shell find $(ETC_AS_LIB) -type f | sed 's|^$(ETC_AS_LIB)/||')
 
-install: $(patsubst %, $(DESTDIR)$(INSTALL_BIN)/%, $(all_bin_sources)) \
-         $(patsubst %, $(DESTDIR)$(INSTALL_LIB)/%, $(all_lib_sources))
-
 $(DESTDIR)$(INSTALL_BIN)/%: $(ETC_AS_BIN)/%
 	@mkdir -p $(dir $@)
 	install $< $@
@@ -85,6 +82,9 @@ $(DESTDIR)$(INSTALL_BIN)/%: $(ETC_AS_BIN)/%
 $(DESTDIR)$(INSTALL_LIB)/%: $(ETC_AS_LIB)/%
 	@mkdir -p $(dir $@)
 	install $< $@
+
+install: $(patsubst %, $(DESTDIR)$(INSTALL_BIN)/%, $(all_bin_sources)) \
+         $(patsubst %, $(DESTDIR)$(INSTALL_LIB)/%, $(all_lib_sources))
 
 uninstall:
 	rm -rf $(DESTDIR)$(INSTALL_BIN)/$(ETC_AS)
@@ -95,12 +95,13 @@ uninstall:
 APT_VERSION := $(shell apt-get --version)
 PYTHON_3_10 ?= python3.10
 PYTHON_3_10_VERSION := $(shell $(PYTHON_3_10) --version)
+PIP_3_10_VERSION := $(shell $(PYTHON_3_10) -m pip --version)
 
 ifeq (,$(APT_VERSION))
 deps:
 	$(error Sorry, the dependency install walkthrough only works on apt-based systems. Check the README and do a manual install.)
 else
-deps: python310 python-packages
+deps: python310 python310-pip python-packages
 endif
 
 python310:
@@ -110,6 +111,11 @@ ifeq (,$(PYTHON_3_10_VERSION))
 	sudo apt install software-properties-common -y
 	sudo add-apt-repository ppa:deadsnakes/ppa
 	sudo apt install $(PYTHON_3_10)
+endif
+
+python310-pip:
+ifeq (,$(PIP_3_10_VERSION))
+	sudo apt install python3-pip
 endif
 
 python-packages: python310
