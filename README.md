@@ -4,6 +4,8 @@ A basic implementation of an assembler for [ETCa](https://github.com/ETC-A/etca-
 This is not supposed to be permanent solution and therefore this is not well designed everywhere. 
 One of the goals is that it's at least reasoanbly easy to add extensions.
 
+All discussion related to ETCa happen on the Turing Complete discord: https://discord.gg/Wjdz8RJp7R. Ask there if you need help or have an improvement suggestion.
+
 ## Installation
 
 This assembler was not aimed at being easy to use for those unfamiliar with a terminal. However, after some
