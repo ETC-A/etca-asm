@@ -5,6 +5,7 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from pprint import pprint
 from dataclasses import dataclass
@@ -14,7 +15,7 @@ import sys
 def parse_args(args):
     parser = argparse.ArgumentParser()
     exe = sys.executable.replace('\\','/')
-    parser.add_argument("-c", "--command", action="store", default=f"{exe} etc-as.py",
+    parser.add_argument("-c", "--command", action="store", default=f"{exe} -m etc_as",
                         help="The assembler to test")
     parser.add_argument("-i", "--include", action="append",
                         help="A glob-like pattern of which golden tests to include")
@@ -71,6 +72,7 @@ def main(args):
     with tempfile.TemporaryDirectory() as tmp_dir:
         p = Path(tmp_dir)
         for test_case in collect_test_cases(ns):
+            start = time.perf_counter()
             first_line = test_case.assembly_file.read_text('utf8').partition("\n")[0].strip()
             if first_line[0] != ";":
                 extra_arguments = []
@@ -111,6 +113,8 @@ def main(args):
                     if expected != got:
                         print(f"Output {mode} for {test_case.name} did not match expected, creating .fail file")
                         shutil.move(tmp, path.with_suffix(path.suffix + ".fail"))
+            end = time.perf_counter()
+            print(f"Test Case {test_case.name} took {end - start} seconds")
 
 
 if sys.version_info[0:2] < (3, 10):

@@ -109,7 +109,7 @@ def base_computations_2reg(context, inst: str, inst_size, a: tuple[int | None, i
     size, (a, b) = validate_registers(context, a, b, inst_size=inst_size)
 
     op = INSTRUCTIONS[inst]
-    reject(op >= 12, f"Opcode {op} doesn't have a 2 register form")
+    reject(op >= 12, f"Opcode {inst} doesn't have a 2 register form")
     return build((0b00, 2), (context.register_sizes[size], 2), (op, 4), (a, 3), (b, 3), (0, 2))
 
 
@@ -121,9 +121,9 @@ def base_computations_imm(context, inst: str, inst_size: str | None, reg: tuple[
 
     if op <= 7 or op == 9:
         reject(not isinstance(imm, int) or not (-16 <= imm < 16),
-               f"Invalid immediate for base {imm} with opcode {inst}")
+               f"Invalid immediate for base-isa {imm} with opcode {inst}")
     else:
-        reject(not isinstance(imm, int) or not (0 <= imm < 32), f"Invalid immediate for base {imm} with opcode {inst}")
+        reject(not isinstance(imm, int) or not (0 <= imm < 32), f"Invalid immediate for base-isa {imm} with opcode {inst}")
 
     return build((0b01, 2), (context.register_sizes[size], 2), (op, 4), (a, 3), (imm & 0x1F, 5))
 
@@ -201,8 +201,8 @@ CONDITION_NAMES = {
     "mp": 14, "": 14,
 }
 
-@base.inst(f'/j{oneof(*CONDITION_NAMES)}/ symbol')
-def base_jumps(context, inst: str, symbol: str):
+@base.inst(f'/j{oneof(*CONDITION_NAMES, exclude=("",))}/ symbol')
+def base_jumps(context, inst: str, symbol: tuple[int, str]):
     inst = inst.removeprefix('j')
     op = CONDITION_NAMES[inst]
     target = context.resolve_symbol(symbol)
@@ -212,8 +212,8 @@ def base_jumps(context, inst: str, symbol: str):
     offset = target - context.ip
     reject(not (-256 <= offset < 256),
         f"""Cannot encode near jump:
-    from `{inst} {symbol}' at 0x{context.ip:04x}
-    to `{symbol}' resolved to 0x{target:04x}"""
+    from `j{inst} {context.symbol_short_name(symbol)}' at 0x{context.ip:04x}
+    to `{context.symbol_full_name(symbol)}' resolved to 0x{target:04x}"""
     )
     return build((0b100, 3), (offset < 0, 1), (op, 4), (offset & 0xFF, 8))
 
