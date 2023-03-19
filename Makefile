@@ -2,7 +2,7 @@
 
 ETC_AS := etc-as
 
-.PHONY: all clean deps test install uninstall python310 python310-pip
+.PHONY: all deps test install uninstall python310 python310-pip
 
 all: install
 
