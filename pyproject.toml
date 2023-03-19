@@ -7,7 +7,7 @@ name = "etc_as"
 authors = [
     {name = "MegaIng", email = "trampchamp@hotmail.de"},
     {name = "JKTKops"},
-    {name = "EnderShadow"},
+    {name = "EnderShadow", email = "mw@matthewwarren.dev"},
 ]
 readme = "README.md"
 license = {file = "LICENSE"}
