@@ -208,7 +208,7 @@ def base_jumps(context, inst: str, symbol: tuple[int, str]):
     target = context.resolve_symbol(symbol)
     if target is None:
         target = context.ip
-    
+
     offset = target - context.ip
     reject(not (-256 <= offset < 256),
         f"""Cannot encode near jump:
@@ -222,6 +222,15 @@ def base_jumps(context, inst: str, symbol: tuple[int, str]):
 def base_nop(context):
     return b"\x8f\x00"  # jump nowhere, never
 
+
 @base.inst('"halt" | "hlt"')
 def base_halt(context):
     return b"\x8e\x00"  # jump nowhere, always
+
+
+@base.inst(f'/hlt{oneof(*(name for name in CONDITION_NAMES if name not in ("mp", "")))}/')
+def cond_halt(context, inst: str):
+    inst = inst.removeprefix('hlt')
+    op = CONDITION_NAMES[inst]
+
+    return build((0b1000, 4), (op, 4), (0, 8))
