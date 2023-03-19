@@ -1,4 +1,4 @@
-from etca_asm.core import Extension
+from etc_as.core import Extension
 
 dword = Extension(14, "dword_operations", "Double Word Operations")
 

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 
-from etca_asm.core import Assembler
+from etc_as.core import Assembler
 
-import etca_asm.core
-import etca_asm.base_isa
-import etca_asm.common_macros
-import etca_asm.extensions
+import etc_as.core
+import etc_as.base_isa
+import etc_as.common_macros
+import etc_as.extensions
 
-etca_asm.extensions.import_all_extensions()
+etc_as.extensions.import_all_extensions()
 
 ass = Assembler()
 

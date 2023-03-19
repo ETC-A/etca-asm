@@ -1,5 +1,5 @@
-from etca_asm.core import Extension, reject, oneof
-from etca_asm.base_isa import CONDITION_NAMES, validate_registers, build
+from etc_as.core import Extension, reject, oneof
+from etc_as.base_isa import CONDITION_NAMES, validate_registers, build
 
 functions = Extension(1, "functions", "Stack and Functions")
 Register = tuple[int | None, int]

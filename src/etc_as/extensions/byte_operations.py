@@ -1,4 +1,4 @@
-from etca_asm.core import Extension
+from etc_as.core import Extension
 
 byte = Extension(3, "byte_operations", "Byte Operations")
 

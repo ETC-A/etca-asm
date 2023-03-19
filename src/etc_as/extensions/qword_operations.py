@@ -1,4 +1,4 @@
-from etca_asm.core import Extension
+from etc_as.core import Extension
 
 qword = Extension(15, "qword_operations", "Quad Word Operations")
 

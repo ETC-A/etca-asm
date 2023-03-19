@@ -1,0 +1,27 @@
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "etc_as"
+authors = [
+    {name = "MegaIng", email = "trampchamp@hotmail.de"},
+    {name = "JKTKops"},
+    {name = "EnderShadow", email = "mw@matthewwarren.dev"},
+]
+readme = "README.md"
+license = {file = "LICENSE"}
+classifiers = ["License :: OSI Approved :: MIT License"]
+dynamic = ["version", "description"]
+requires-python = ">=3.10"
+dependencies = [
+    "lark",
+    "bitarray",
+    "frozendict",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/ETC-A/etca-asm"
+
+[project.scripts]
+etc-as = "etc_as.main:main"

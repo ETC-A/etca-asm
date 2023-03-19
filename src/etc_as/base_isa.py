@@ -1,7 +1,7 @@
 from bitarray import bitarray
 from bitarray.util import int2ba
 
-from etca_asm.core import Extension, reject, resolve_register_size, oneof
+from etc_as.core import Extension, reject, resolve_register_size, oneof
 
 base = Extension(None, "base", "Base Instruction Set", True)
 
