@@ -8,11 +8,13 @@ import tempfile
 from pathlib import Path
 from pprint import pprint
 from dataclasses import dataclass
+import sys
 
 
 def parse_args(args):
     parser = argparse.ArgumentParser()
-    parser.add_argument("-c", "--command", action="store", default="python3.10 etc-as.py",
+    exe = sys.executable.replace('\\','/')
+    parser.add_argument("-c", "--command", action="store", default=f"{exe} etc-as.py",
                         help="The assembler to test")
     parser.add_argument("-i", "--include", action="append",
                         help="A glob-like pattern of which golden tests to include")
@@ -69,7 +71,7 @@ def main(args):
     with tempfile.TemporaryDirectory() as tmp_dir:
         p = Path(tmp_dir)
         for test_case in collect_test_cases(ns):
-            first_line = test_case.assembly_file.read_text().partition("\n")[0].strip()
+            first_line = test_case.assembly_file.read_text('utf8').partition("\n")[0].strip()
             if first_line[0] != ";":
                 extra_arguments = []
             else:

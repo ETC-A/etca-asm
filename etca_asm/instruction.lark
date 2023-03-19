@@ -1,4 +1,6 @@
 instruction: -> no_instruction
+           | NAME (atom_raw ("," atom_raw)*)? -> macro_invocation
+
 instruction_raw: instruction
 
 NAME: /\b[^\W0-9]\w*/

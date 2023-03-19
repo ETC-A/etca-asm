@@ -9,11 +9,12 @@ from dataclasses import dataclass, field
 from functools import partial, reduce
 from pathlib import Path
 from pprint import pformat
+from string import Template
 from types import SimpleNamespace
 from typing import Callable, NamedTuple, Iterable
 
 from frozendict import frozendict
-from lark import Lark, Transformer, GrammarError
+from lark import Lark, Transformer, GrammarError, Tree
 from lark.load_grammar import GrammarBuilder
 from lark.visitors import CollapseAmbiguities
 
@@ -307,6 +308,15 @@ class _CompileInstruction(Transformer):
         self.context = context
         self.line = line
 
+    def macro_invocation(self, children):
+        name, *args = children
+        if name in self.context.known_macros:
+            argc, body = self.context.known_macros[name]
+            if argc == len(args):
+                return self.context.macro(body.format(*args))
+            raise _RejectionError(f"Unexpected number of arguments for macro {name}. (got {len(args)}, expected {argc}")
+        raise _RejectionError()
+
     def __default__(self, data, children, meta):
         if data.endswith('_raw'):
             return self.line[meta.start_pos:meta.end_pos]
@@ -380,6 +390,7 @@ class Assembler:
             self.context.output = []
             self.context.available_extensions = extras.pop('available_extensions', None) or set(potential_extensions)
             self.context.modes = extras.pop('default_modes', None) or set()
+            self.context.known_macros = {}
         for k, v in extras.items():
             setattr(self.context, k, v)
 
@@ -425,7 +436,7 @@ class Assembler:
         self.current_parser = Lark(grammar, parser='earley', lexer='dynamic', ambiguity="explicit",
                                    start="instruction", propagate_positions=True)
 
-    def handle_instruction(self, line):
+    def handle_instruction(self, line: str):
         if self.context.verbosity >= 3:
             self.logger.debug(f"Enabled extensions: {self.context.enabled_extensions}")
             self.logger.debug(f"Active modes: {self.context.modes}")
@@ -443,7 +454,8 @@ class Assembler:
             try:
                 result = _CompileInstruction(self.context, line).transform(option)
             except _RejectionError as e:
-                rejections.append(e)
+                if e.args:
+                    rejections.append(e)
                 continue
             else:
                 results.append(result)
@@ -472,10 +484,22 @@ class Assembler:
         return b''.join(o.binary for o in new_output)
 
     def single_pass(self, full_text: str):
+        in_macro = False
+        macro = None
         for line in full_text.splitlines(False):
             if self.context.verbosity >= 2:
                 self.logger.debug(f"Starting with line: {line!r}")
-            self.handle_instruction(line)
+            if not in_macro and line.lstrip().startswith('.macro'):
+                in_macro = True
+                _, name, param_count = line.split()
+                macro = (name, int(param_count), [])
+            elif in_macro and line.lstrip().startswith(".endmacro"):
+                in_macro = False
+                self.context.known_macros[macro[0]] = (macro[1], '\n'.join(macro[2]))
+            elif in_macro:
+                macro[2].append(line)
+            else:
+                self.handle_instruction(line)
             if self.context.verbosity >= 2:
                 self.logger.debug(f"Done with line    : {line!r}")
 
