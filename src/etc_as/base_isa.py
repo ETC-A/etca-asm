@@ -201,18 +201,19 @@ CONDITION_NAMES = {
     "mp": 14, "": 14,
 }
 
-@base.inst(f'/j{oneof(*CONDITION_NAMES)}/ symbol')
+
+@base.inst(f'/j{oneof(*(name for name in CONDITION_NAMES if name not in ("",)))}/ symbol')
 def base_jumps(context, inst: str, symbol: str):
     inst = inst.removeprefix('j')
     op = CONDITION_NAMES[inst]
     target = context.resolve_symbol(symbol)
     if target is None:
         target = context.ip
-    
+
     offset = target - context.ip
     reject(not (-256 <= offset < 256),
         f"""Cannot encode near jump:
-    from `{inst} {symbol}' at 0x{context.ip:04x}
+    from `j{inst} {symbol}' at 0x{context.ip:04x}
     to `{symbol}' resolved to 0x{target:04x}"""
     )
     return build((0b100, 3), (offset < 0, 1), (op, 4), (offset & 0xFF, 8))
@@ -222,6 +223,15 @@ def base_jumps(context, inst: str, symbol: str):
 def base_nop(context):
     return b"\x8f\x00"  # jump nowhere, never
 
+
 @base.inst('"halt" | "hlt"')
 def base_halt(context):
     return b"\x8e\x00"  # jump nowhere, always
+
+
+@base.inst(f'/hlt{oneof(*(name for name in CONDITION_NAMES if name not in ("mp", "")))}/')
+def cond_halt(context, inst: str):
+    inst = inst.removeprefix('hlt')
+    op = CONDITION_NAMES[inst]
+
+    return build((0b1000, 4), (op, 4), (0, 8))
