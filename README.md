@@ -1,6 +1,6 @@
 # etca-asm
 
-A basic implementation of an assembler for [ETCa](https://github.com/MegaIng/ETC.a). 
+A basic implementation of an assembler for [ETCa](https://github.com/ETC-A/etca-spec). 
 This is not supposed to be permanent solution and therefore this is not well designed everywhere. 
 One of the goals is that it's at least reasoanbly easy to add extensions.
 
