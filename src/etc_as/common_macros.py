@@ -27,7 +27,7 @@ def mov_large_immediate(context, reg, imm):
         reject(not any(map(lambda x: x.strid == 'qword_operations', context.enabled_extensions)), reject_msg)
         size = 'q'
     else:
-        reject(reject_msg)
+        reject(message=reject_msg)
     
     bit_groups = split_into_bit_groups(imm)
     instructions = []

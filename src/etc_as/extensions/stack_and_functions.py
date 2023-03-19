@@ -47,30 +47,28 @@ def push_register_imm(cxt, inst_size, imm: int):
     )
     return build((0b01,2), (cxt.register_sizes[size],2), (0xD,4), (6,3), (imm,5))
 
-@functions.inst(f'/j{oneof(*CONDITION_NAMES)}/ register')
+@functions.inst(f'/j{oneof(*CONDITION_NAMES, exclude=("",))}/ register')
 def cond_abs_reg_jump(cxt, inst: str, reg: Register):
     _,(src,) = validate_registers(cxt, reg)
     cc = inst.removeprefix('j')
     op = CONDITION_NAMES[cc]
     return build((0xAF,8), (src,3), (0b0,1), (op,4))
 
-@functions.inst(f'/ret{oneof(*CONDITION_NAMES)}/')
+@functions.inst(f'/ret{oneof(*CONDITION_NAMES, exclude=("mp",))}/')
 def cond_return(cxt, inst: str):
     cc = inst.removeprefix('ret')
-    reject(cc == 'mp', "`mp' is not a valid conditional return suffix")
     op = CONDITION_NAMES[cc]
     return build((0xAF,8), (0b111,3), (0b0,1), (op,4))
 
-@functions.inst(f'/call{oneof(*CONDITION_NAMES)}/ register')
+@functions.inst(f'/call{oneof(*CONDITION_NAMES, exclude=("mp",))}/ register')
 def cond_abs_reg_call(cxt, inst: str, reg: Register):
     _,(src,) = validate_registers(cxt, reg)
     cc = inst.removeprefix('call')
-    reject(cc == 'mp', "`mp' is not a valid conditional call suffix")
     op = CONDITION_NAMES[cc]
     return build((0xAF,8), (src,3), (0b1,1), (op,4))
 
 @functions.inst('"call" symbol')
-def rel_near_imm_call(cxt, lbl: str):
+def rel_near_imm_call(cxt, lbl: tuple[int, str]):
     target = cxt.resolve_symbol(lbl)
     if target is None:
         target = cxt.ip
@@ -79,7 +77,7 @@ def rel_near_imm_call(cxt, lbl: str):
     reject(
         offset < -2048 or offset > 2047,
         f"""Cannot encode near call:
-    from `call {lbl}'     at 0x{cxt.ip:04x}
-    to   `{lbl}' resolved to 0x{target:04x}"""
+    from `call {cxt.symbol_short_name(lbl)}'     at 0x{cxt.ip:04x}
+    to   `{cxt.symbol_full_name(lbl)}' resolved to 0x{target:04x}"""
     )
     return build((0xB,4), (bottom_mask & offset, 12))

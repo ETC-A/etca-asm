@@ -10,11 +10,13 @@ from functools import partial, reduce
 from pathlib import Path
 from pprint import pformat
 from string import Template
+from textwrap import indent
 from types import SimpleNamespace
 from typing import Callable, NamedTuple, Iterable
 
 from frozendict import frozendict
 from lark import Lark, Transformer, GrammarError, Tree
+from lark.exceptions import VisitError
 from lark.load_grammar import GrammarBuilder
 from lark.visitors import CollapseAmbiguities
 
@@ -89,8 +91,15 @@ class Extension:
 core = Extension(None, "core", "Core Assembly", True)
 
 
+def _symbol_full_name(context, name: tuple[int, str]) -> str:
+    return '.'.join((*context.symbol_path[:name[0]], name[1]))
+
+
+def _symbol_short_name(context, name: tuple[int, str]) -> str:
+    return '.' * name[0] + name[1]
+
 def _resolve_symbol(context, name: tuple[int, str]) -> int | None:
-    full_name = '.'.join((*context.symbol_path[:name[0]], name[1]))
+    full_name = context.symbol_full_name(name)
     if full_name in context.symbols:
         return context.symbols[full_name]
     else:
@@ -110,6 +119,8 @@ def core_init(context):
     context.missing_symbols = set()
     context.changed_symbols = set()
     context.illegal_symbols = set()
+    context.symbol_short_name = partial(_symbol_short_name, context)
+    context.symbol_full_name = partial(_symbol_full_name, context)
     context.resolve_symbol = partial(_resolve_symbol, context)
     for e in potential_extensions.values():
         if e.init is not None and e is not core:
@@ -117,9 +128,9 @@ def core_init(context):
     context.reload_extensions()
 
 
-def oneof(*names: str):
+def oneof(*names: str, exclude=()):
     names = sorted(names, key=len, reverse=True)
-    return f"({'|'.join(names)})"
+    return f"({'|'.join(name for name in names if name not in exclude)})"
 
 
 _WORD_SIZES = {
@@ -255,25 +266,33 @@ def immediate_symbol(context, symbol):
     else:
         return value
 
+
 @core.register_syntax('expression_paren', '"(" expression_or ")" | atom')
 def expr_paren(context, immediate: int):
     return immediate
 
+
 UNARY_OPERATIONS = {'~': lambda x: ~x, '!': lambda x: int(not x), '-': lambda x: -x, '+': lambda x: +x}
+
 
 @core.register_syntax('expression_unary', '/~|!|-|\+/ expression_paren')
 def expr_unary(context, operator, expression):
     return UNARY_OPERATIONS[operator](expression)
 
+
 MUL_OPERATIONS = {'*': lambda a, b: a * b, '/': lambda a, b: a // b, '%': lambda a, b: a % b}
 
-@core.register_syntax('expression_mul', '(expression_paren | expression_unary) (/\/|\*|%/ (expression_paren | expression_unary))*')
+
+@core.register_syntax('expression_mul',
+                      '(expression_paren | expression_unary) (/\/|\*|%/ (expression_paren | expression_unary))*')
 def expr_mul(context, acc, *ops_and_exprs):
     for op, expr in zip(ops_and_exprs[::2], ops_and_exprs[1::2]):
         acc = MUL_OPERATIONS[op](acc, expr)
     return acc
 
+
 ADD_OPERATIONS = {'+': lambda a, b: a + b, '-': lambda a, b: a - b}
+
 
 @core.register_syntax('expression_add', 'expression_mul (/\+|-/ expression_mul)*')
 def expr_add(context, acc, *ops_and_exprs):
@@ -281,7 +300,9 @@ def expr_add(context, acc, *ops_and_exprs):
         acc = ADD_OPERATIONS[op](acc, expr)
     return acc
 
+
 SHIFT_OPERATIONS = {'<<': lambda a, b: a << b, '>>': lambda a, b: a >> b}
+
 
 @core.register_syntax('expression_shift', 'expression_add (/<<|>>/ expression_add)*')
 def expr_shift(context, acc, *ops_and_exprs):
@@ -289,13 +310,16 @@ def expr_shift(context, acc, *ops_and_exprs):
         acc = SHIFT_OPERATIONS[op](acc, expr)
     return acc
 
+
 @core.register_syntax('expression_and', 'expression_shift ("&"  expression_shift)*')
 def expr_and(context, expr, *exprs):
     return reduce(lambda a, b: a & b, exprs, expr)
 
+
 @core.register_syntax('expression_xor', 'expression_and ("^" expression_and)*')
 def expr_xor(context, expr, *exprs):
     return reduce(lambda a, b: a ^ b, exprs, expr)
+
 
 @core.register_syntax('expression_or', 'expression_xor ("|" expression_xor)*')
 def expr_or(context, expr, *exprs):
@@ -314,8 +338,8 @@ class _CompileInstruction(Transformer):
             argc, body = self.context.known_macros[name]
             if argc == len(args):
                 return self.context.macro(body.format(*args))
-            raise _RejectionError(f"Unexpected number of arguments for macro {name}. (got {len(args)}, expected {argc}")
-        raise _RejectionError()
+            raise RejectionError(f"Unexpected number of arguments for macro {name}. (got {len(args)}, expected {argc}")
+        raise RejectionError(None)
 
     def __default__(self, data, children, meta):
         if data.endswith('_raw'):
@@ -327,13 +351,28 @@ class _CompileInstruction(Transformer):
         return se.func(self.context, *children)
 
 
-class _RejectionError(BaseException):
-    pass
+class RejectionError(BaseException):
+    def __init__(self, reason: str | None):
+        self.reason = reason
+        super().__init__(reason)
 
 
-def reject(cond=True, *args):
+class UnknownInstruction(Exception):
+    def __init__(self, line: str, rejections: list[RejectionError]) -> None:
+        self.line = line
+        self.rejections = rejections
+        message = f"Can't process instruction: {line.strip()}"
+        reasons = [r.reason for r in rejections if r.reason is not None]
+        if len(reasons) > 1:
+            message += "\nReasons:\n" + indent("\n".join(reasons), '    ')
+        elif reasons:
+            message += "\nReason: " + reasons[0]
+        super().__init__(message)
+
+
+def reject(cond=True, message: str = None):
     if cond:
-        raise _RejectionError(args)
+        raise RejectionError(message)
 
 
 class InstructionOutput(NamedTuple):
@@ -453,14 +492,15 @@ class Assembler:
         for option in options:
             try:
                 result = _CompileInstruction(self.context, line).transform(option)
-            except _RejectionError as e:
-                if e.args:
-                    rejections.append(e)
+            except RejectionError as e:
+                rejections.append(e)
                 continue
+            except VisitError as e:
+                raise e.orig_exc from None
             else:
                 results.append(result)
         if not results:
-            raise NotImplementedError("Everyone rejected", line, rejections)
+            raise UnknownInstruction(line, rejections)
         if len(results) > 1:
             #  TODO: Maybe raise errors on later passes if this isn't resolved?
             #        OTOH if these ambiguities are actually correct, it shouldn't hurt
