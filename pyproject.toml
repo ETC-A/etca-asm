@@ -22,6 +22,8 @@ dependencies = [
 
 [project.urls]
 "Homepage" = "https://github.com/ETC-A/etca-asm"
+"Discord" = "https://discord.gg/Wjdz8RJp7R"
+"Issue Tracker" = "https://github.com/ETC-A/etca-asm/issues"
 
 [project.scripts]
 etc-as = "etc_as.main:main"
