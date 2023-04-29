@@ -1,5 +1,5 @@
-from etca_asm.core import Extension
-from etca_asm.base_isa import NAMED_CRS
+from etc_as.core import Extension
+from etc_as.base_isa import NAMED_CRS
 
 dword_ptrs = Extension(16, "dword_pointers", "32 Bit Address Space")
 
