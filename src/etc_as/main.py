@@ -25,7 +25,7 @@ def assemble(in_file: str, out_file: str):
     if mformat == 'binary':
         output_as_binary(res, out_file)
     elif mformat == 'annotated':
-        output_as_annotated(res, out_file)
+        output_as_annotated(res, out_file, (res.max_address_width + 7) // 8)
     elif mformat == 'tc':
         output_as_tc_8(res, out_file)
     elif mformat == 'tc-64':
@@ -68,11 +68,12 @@ def output_as_tc_64(res, out_file):
             do_print()
 
 
-def output_as_annotated(res, out_file):
+def output_as_annotated(res, out_file, address_width):
+    address_mask = (1 << (address_width*8)) - 1
     with open(out_file, 'w') as f:
         for instr in res.output_with_aligns():
             encoding = ' '.join('{:02x}'.format(b) for b in instr.binary)
-            f.write(f"0x{instr.start_ip:04x}: {encoding:30}# {instr.raw_line}\n")
+            f.write(f"0x{instr.start_ip & address_mask:0{address_width*2}x}: {encoding:30}# {instr.raw_line}\n")
 
 
 args = sys.argv

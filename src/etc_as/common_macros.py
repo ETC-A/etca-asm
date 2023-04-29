@@ -18,14 +18,18 @@ def mov_large_immediate(context, reg, imm):
     reject_msg = f'Immediate is too large to fit in a register: {imm}'
     if -2**7 <= imm <= 2**8 - 1 and 'h' in reg:
         size = 'h'
+        imm = sign_extend(imm, 8)
     elif -2**15 <= imm <= 2**16 - 1:
         size = 'x'
+        imm = sign_extend(imm, 16)
     elif -2**31 <= imm <= 2**32 - 1:
         reject(not any(map(lambda x: x.strid == 'dword_operations', context.enabled_extensions)), reject_msg)
         size = 'd'
+        imm = sign_extend(imm, 32)
     elif -2**63 <= imm <= 2**64 - 1:
         reject(not any(map(lambda x: x.strid == 'qword_operations', context.enabled_extensions)), reject_msg)
         size = 'q'
+        imm = sign_extend(imm, 64)
     else:
         reject(message=reject_msg)
     
