@@ -22,7 +22,13 @@ from lark.visitors import CollapseAmbiguities
 
 
 class Context(SimpleNamespace):
-    pass
+    @property
+    def ip(self):
+        return self.full_ip & self.ip_mask
+
+    @ip.setter
+    def ip(self, value):
+        self.full_ip = ((self.full_ip & ~self.ip_mask) | (self.ip_mask & value))
 
 
 @dataclass
@@ -112,8 +118,12 @@ def _resolve_symbol(context, name: tuple[int, str]) -> int | None:
 def core_init(context):
     context.enabled_extensions = [e for a in context.available_extensions
                                   if (e := potential_extensions[a]).default_on]
+    for e in context.enabled_extensions:
+        if e.init is not None and e is not core:
+            e.init(context)
     context.modes = set()
-    context.ip = 0x8000
+    context.ip_mask = 0xFFFF
+    context.full_ip = 0xFFFF_FFFF_FFFF_8000
     context.symbols = {}
     context.symbol_path = ['']
     context.missing_symbols = set()
@@ -122,9 +132,6 @@ def core_init(context):
     context.symbol_short_name = partial(_symbol_short_name, context)
     context.symbol_full_name = partial(_symbol_full_name, context)
     context.resolve_symbol = partial(_resolve_symbol, context)
-    for e in potential_extensions.values():
-        if e.init is not None and e is not core:
-            e.init(context)
     context.reload_extensions()
 
 
@@ -242,6 +249,9 @@ def enable_extension(context, *names: str):
         ext = potential_extensions[name]
         if ext not in context.enabled_extensions:
             context.enabled_extensions.append(ext)
+            if ext.init is not None:
+                assert ext is not core
+                ext.init(context)
     context.reload_extensions()
 
 
@@ -384,6 +394,7 @@ class InstructionOutput(NamedTuple):
 @dataclass()
 class AssemblyResult:
     output: list[InstructionOutput]
+    max_address_width: int = 16
     fill_value: bytes = b"\x00"
 
     def output_with_aligns(self, starting_at=None) -> Iterable[InstructionOutput]:
@@ -510,7 +521,7 @@ class Assembler:
         else:
             result, = results
         if result is not None:
-            self.context.output.append(InstructionOutput(self.context.ip, result, line))
+            self.context.output.append(InstructionOutput(self.context.full_ip, result, line))
             self.context.ip += len(result)
 
     def macro(self, instructions: str):
@@ -556,7 +567,7 @@ class Assembler:
             if old == (self.context.missing_symbols, self.context.changed_symbols):
                 raise ValueError(
                     f"Stuck without further progress, still missing symbols {self.context.missing_symbols}")
-        return AssemblyResult(self.context.output)
+        return AssemblyResult(self.context.output, self.context.ip_mask.bit_count())
 
 
 def resolve_register_size(context, *sizes: str | None):
