@@ -245,7 +245,9 @@ def local_symbol_reference(context, dots, name: str):
 def enable_extension(context, *names: str):
     for name in names:
         if name not in context.available_extensions:
-            raise ValueError(f"Unknown extension {name!r}, expected one of {list(context.available_extensions)}")
+            not_internal = [name for name in context.available_extensions
+                                    if potential_extensions[name].cpuid is not None]
+            raise ValueError(f"Unknown extension {name!r}, expected one of {not_internal}")
         ext = potential_extensions[name]
         if ext not in context.enabled_extensions:
             context.enabled_extensions.append(ext)
