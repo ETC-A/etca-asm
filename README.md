@@ -1,3 +1,13 @@
+# NOTICE OF DEPRECATION
+
+The project currently available here is a python assembler for the ETCa architecture. It only supports single-file projects, and suffers horrifying performance degradation on assembly files exceeding a few hundred lines.
+
+This was always intended to be a temporary assembler until we were ready to invest effort into a more feature-rich assembler which is not necessarily as easy to hack on. That project has now begun, at [etca-binutils-gdb](https://github.com/ETC-A/etca-binutils-gdb). It does not support all of the extensions supported by this assembler but is quickly catching up; additionally it supports multi-file projects via intermediate ELF objects, as is the standard for nearly every platform today.
+
+Installation instructions for that assembler can be found at [that project's wiki](https://github.com/ETC-A/etca-binutils-gdb/wiki/Installation). It is currently suitable for use producing ELF executables (for which we are not aware of any system that can consume them, yet), or a binary dump (which can be used with TC FileLoader components). For a listing that can be used with a TC Program Component, we plan to provide a wrapper script in this repository.
+
+In the meantime, the python assembler here still functions as documented. Thanks for your patience!
+
 # etc-as
 
 A basic implementation of an assembler for [ETCa](https://github.com/ETC-A/etca-spec). 
