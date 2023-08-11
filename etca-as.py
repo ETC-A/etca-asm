@@ -38,20 +38,32 @@ class SourceLine:
         return cls(lineno, address, address, data, rest.rstrip(), label)
 
 
+def is_comment(text: str) -> bool:
+    return not text.strip() or text.strip().startswith(';')
+
+
+def next_or(iterable, default=None):
+    try:
+        return next(iterable)
+    except StopIteration:
+        return default
+
+
 @dataclass
 class Listing:
-    obj_name: str
+    source_name: str | None
+    obj_name: str | None
     lines: list[SourceLine]
 
     @classmethod
-    def parse(cls, obj_name: str, s: str, word_count) -> 'Listing':
+    def parse(cls, source_name: str, obj_name: str, s: str, word_count) -> 'Listing':
         out = []
         last_index = -1
         for line in s.splitlines():
             if line:
                 out.append(SourceLine.parse(line, word_count))
                 assert out[-1].lineno > last_index
-        return cls(obj_name, out)
+        return cls(source_name, obj_name, out)
 
     def out_tc(self, f: TextIO):
         for line in self.lines:
@@ -88,6 +100,30 @@ class Listing:
                 do_print()
         while len(bs) > 0:
             do_print()
+
+    @classmethod
+    def combine(cls, listings: list['Listing'], keep_filter=lambda _: True, add_file_name=True):
+        fragments = []
+        for lis in listings:
+            current = []
+            if add_file_name and lis.source_name is not None:
+                current.append(SourceLine(0, None, None, None, f"; {lis.source_name}", None))
+            for line in lis.lines:
+                if not line.data:
+                    if keep_filter(line):
+                        current.append(line)
+                else:
+                    current.append(line)
+                    fragments.append((line.addr, current))
+                    current = []
+        fragments.sort(key=lambda t: t[0])
+        offset = 0
+        res = []
+        for frag in fragments:
+            res.extend(frag[1])
+            res[-1].offset = offset
+            offset += len(res[-1].data)
+        return cls(None, None, res)
 
 
 formats = ["binary", "tc", "tc-64", "annotated"]
@@ -232,6 +268,26 @@ def parse_arguments(args, program_name=None):
     return parser.parse_args(args)
 
 
+def assign_addresses(listing: Listing, symtab: SymbolTable):
+    last_addr = None
+    for line in listing.lines:
+        if line.label_def:
+            if line.label_def in symtab.global_symbols:
+                line.addr = symtab.global_symbols[line.label_def].value
+            elif (listing.obj_name, line.label_def) in symtab.local_symbols:
+                line.addr = symtab.local_symbols[(listing.obj_name, line.label_def)].value
+            else:
+                raise ValueError(line)
+            last_addr = (line.addr, line.offset)
+        elif last_addr is not None and line.addr is not None:
+            if last_addr[1] is None:
+                line.addr = last_addr[0]
+            else:
+                line.addr = last_addr[0] + (line.offset - last_addr[1])
+        if line.offset is not None:
+            last_addr = (line.addr, line.offset)
+
+
 def assemble(tool: EtcaToolchain, input_files: list[Path], output: Path, format: str) -> Path:
     with tool.mktemp():
         if format == "binary":
@@ -249,37 +305,24 @@ def assemble(tool: EtcaToolchain, input_files: list[Path], output: Path, format:
                 "--listing-cont-lines", "0",
                 "--listing-lhs-width", str(word_count)])
             object_files.append(o)
-            listings.append(Listing.parse(o.name, l.decode(), word_count))
+            listings.append(Listing.parse(file.name, o.name, l.decode(), word_count))
         elf_file = tool.ld(object_files)
         bin_file = tool.objcopy(elf_file, format="binary")
         symtab = SymbolTable.parse(tool.objdump(elf_file, '-t').decode(), [o.name for o in object_files])
+        for listing in listings:
+            assign_addresses(listing, symtab)
+        result = Listing.combine(listings, lambda line: line.label_def is not None)
         data = bin_file.read_bytes()
-        assert len(listings) == 1
-        last_addr = None
-        for line in listings[0].lines:
-            if line.data:
+        for line in result.lines:
+            if line.data is not None:
                 line.data = data[line.offset:line.offset + len(line.data)]
-            if line.label_def:
-                if line.label_def in symtab.global_symbols:
-                    line.addr = symtab.global_symbols[line.label_def].value
-                elif (listings[0].obj_name, line.label_def) in symtab.local_symbols:
-                    line.addr = symtab.local_symbols[(listings[0].obj_name, line.label_def)].value
-                else:
-                    raise ValueError(line)
-            elif last_addr is not None and line.addr is not None:
-                if last_addr[1] is None:
-                    line.addr = last_addr[0]
-                else:
-                    line.addr = last_addr[0] + (line.offset-last_addr[1])
-            if line.addr:
-                last_addr = (line.addr, line.offset)
         with output.open("w") as f:
             if format == "tc":
-                listings[0].out_tc(f)
+                result.out_tc(f)
             elif format == "tc-64":
-                listings[0].out_tc64(f)
+                result.out_tc64(f)
             elif format == "annotated":
-                listings[0].out_annotated(f)
+                result.out_annotated(f)
             else:
                 raise ValueError(format)
 
