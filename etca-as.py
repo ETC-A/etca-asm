@@ -201,6 +201,10 @@ class EtcaToolchain:
             arguments.append(f"-march={self.march}")
         if self.mcpuid:
             arguments.append(f"-mcpuid={self.mcpuid}")
+        if self.mcmodel:
+            arguments.append(f"-mcmodel={self.mcmodel}")
+        if self.mpw:
+            arguments.append(f"-mpw={self.mpw}")
         if listing:
             arguments.append(f"-{listing}")
         arguments.append(input_file)
@@ -263,6 +267,8 @@ def parse_arguments(args, program_name=None):
                                           description="These arguments are passed on to gas unchanged")
     passed_on.add_argument("-march", "--march", action="store")
     passed_on.add_argument("-mcpuid", "--mcpuid", action="store", )
+    passed_on.add_argument("-mcmodel", "--mcmodel", action="store")
+    passed_on.add_argument("-mpw", "--mpw", action="store")
     parser.add_argument("files", nargs="+", type=Path,
                         help="The input assembly files. They are assembled individually and then linked together.")
     return parser.parse_args(args)
@@ -332,6 +338,8 @@ def main(args, program_name=None):
     tool = EtcaToolchain()
     tool.march = settings.march
     tool.mcpuid = settings.mcpuid
+    tool.mcmodel = settings.mcmodel
+    tool.mpw = settings.mpw
     assemble(tool, settings.files, settings.output, settings.format)
 
 
