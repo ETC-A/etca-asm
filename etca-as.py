@@ -5,9 +5,10 @@ import argparse
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from pprint import pprint
 from string import hexdigits
 from tempfile import TemporaryDirectory
-from typing import TextIO
+from typing import TextIO, Iterable
 
 
 @dataclass
@@ -16,11 +17,12 @@ class SourceLine:
     offset: int | None
     addr: int | None
     data: bytes | None
+    section: str
     text: str
     label_def: str | None
 
     @classmethod
-    def parse(cls, s: str, word_count) -> 'SourceLine':
+    def parse(cls, s: str, word_count: int, prev_section: str) -> 'SourceLine':
         lineno, _, rest = s.lstrip().partition(' ')
         lineno = int(lineno)
         if rest[0] in hexdigits:  # We have an address and data in this line
@@ -31,11 +33,17 @@ class SourceLine:
         else:
             address = data = None
             rest = rest[word_count * 9 + 4 + 1:]  # 4 byte address :-/
+        section = prev_section
+        label = None
         if rest.strip() and rest.strip()[-1] == ':' and rest.strip()[:-1].isidentifier():
             label = rest.strip()[:-1]
-        else:
-            label = None
-        return cls(lineno, address, address, data, rest.rstrip(), label)
+        elif rest.strip() and rest.strip().startswith('.'):
+            match rest.strip().split():
+                case ('.text' | '.data' as sec, *_):
+                    section = sec
+                case ('.section', name):
+                    section = name
+        return cls(lineno, address, address, data, section, rest.rstrip(), label)
 
 
 def is_comment(text: str) -> bool:
@@ -59,9 +67,11 @@ class Listing:
     def parse(cls, source_name: str, obj_name: str, s: str, word_count) -> 'Listing':
         out = []
         last_index = -1
+        sec = ".text"
         for line in s.splitlines():
             if line:
-                out.append(SourceLine.parse(line, word_count))
+                out.append(SourceLine.parse(line, word_count, sec))
+                sec = out[-1].section
                 assert out[-1].lineno > last_index
         return cls(source_name, obj_name, out)
 
@@ -107,7 +117,7 @@ class Listing:
         for lis in listings:
             current = []
             if add_file_name and lis.source_name is not None:
-                current.append(SourceLine(0, None, None, None, f"; {lis.source_name}", None))
+                current.append(SourceLine(0, None, None, None, ".text", f"; {lis.source_name}", None))
             for line in lis.lines:
                 if not line.data:
                     if keep_filter(line):
@@ -117,12 +127,12 @@ class Listing:
                     fragments.append((line.addr, current))
                     current = []
         fragments.sort(key=lambda t: t[0])
-        offset = 0
+        offsets = {}
         res = []
         for frag in fragments:
             res.extend(frag[1])
-            res[-1].offset = offset
-            offset += len(res[-1].data)
+            res[-1].offset = offsets.setdefault(res[-1].section, 0)
+            offsets[res[-1].section] += len(res[-1].data)
         return cls(None, None, res)
 
 
@@ -153,7 +163,7 @@ class SymbolTable:
 
     @classmethod
     def parse(cls, text: str, file_names: list[str]):
-        self = cls({},{})
+        self = cls({}, {})
         _, _, data = text.partition("\nSYMBOL TABLE:\n")
         if not data:
             raise ValueError(text)
@@ -170,9 +180,10 @@ class SymbolTable:
             if 'l' in sym.flags:
                 sym.file_name = current_file_name
                 self.local_symbols[(sym.file_name, sym.name)] = sym
-            else:
-                assert 'g' in sym.flags
+            elif 'g' in sym.flags:
                 self.global_symbols[sym.name] = sym
+            else:
+                print("Unknown symbol kind", sym)
         return self
 
 
@@ -193,7 +204,7 @@ class EtcaToolchain:
         ]
         return subprocess.run(command_line, **kwargs)
 
-    def gas(self, input_file: Path, output_file: Path = None, listing=None, extras=()) -> Path | tuple[Path, bytes]:
+    def gas(self, input_file: Path, output_file: Path = None, listing=None, extras=()) -> Path | tuple[Path, Path]:
         if output_file is None:
             output_file = self._get_out("as", ".o")
         arguments = []
@@ -206,14 +217,16 @@ class EtcaToolchain:
         if self.mpw:
             arguments.append(f"-mpw={self.mpw}")
         if listing:
-            arguments.append(f"-{listing}")
+            if not isinstance(listing, tuple):
+                listing = listing, self._get_out("as-listing", f".{listing}")
+            arguments.append(f"-{listing[0]}={listing[1]}")
         arguments.append(input_file)
         arguments.extend(["-o", output_file])
         arguments.extend(extras)
-        res = self.run("as", arguments, stdout=(subprocess.PIPE if listing else None))
+        res = self.run("as", arguments)
         res.check_returncode()
         if listing:
-            return output_file, res.stdout
+            return output_file, listing[1]
         else:
             return output_file
 
@@ -236,6 +249,16 @@ class EtcaToolchain:
         res.check_returncode()
         return output_file
 
+    def objcopy_extract(self, input_file: Path, sections: Iterable[str], format="binary") -> dict[str, Path]:
+        output_files = {}
+        arguments = [input_file]
+        for section in sections:
+            output_files[section] = self._get_out(f"objcopy-{section}", f".{format}")
+            arguments.extend(["--dump-section", f"{section}={output_files[section]}"])
+        res = self.run("objcopy", arguments)
+        res.check_returncode()
+        return output_files
+
     def objdump(self, input_file: Path, *args) -> bytes:
         arguments = [input_file, *args]
         res = self.run("objdump", arguments, stdout=subprocess.PIPE)
@@ -244,11 +267,14 @@ class EtcaToolchain:
 
     @contextmanager
     def mktemp(self):
-        temp_dir = TemporaryDirectory()
-        self.temp_directory = Path(temp_dir.name)
-        yield temp_dir.name
-        self.temp_directory = None
-        temp_dir.cleanup()
+        if self.temp_directory is None:
+            temp_dir = TemporaryDirectory()
+            self.temp_directory = Path(temp_dir.name)
+            yield temp_dir.name
+            self.temp_directory = None
+            temp_dir.cleanup()
+        else:
+            yield self.temp_directory
 
     def _get_out(self, name, suffix):
         if self.temp_directory is None:
@@ -269,14 +295,19 @@ def parse_arguments(args, program_name=None):
     passed_on.add_argument("-mcpuid", "--mcpuid", action="store", )
     passed_on.add_argument("-mcmodel", "--mcmodel", action="store")
     passed_on.add_argument("-mpw", "--mpw", action="store")
+    passed_on.add_argument("--temp", action="store", type=Path,
+                           help="A temporary directory to put temporary files into."
+                                " Will not be cleaned up automatically")
     parser.add_argument("files", nargs="+", type=Path,
                         help="The input assembly files. They are assembled individually and then linked together.")
     return parser.parse_args(args)
 
 
 def assign_addresses(listing: Listing, symtab: SymbolTable):
-    last_addr = None
+    last_addr: dict[str, tuple[int, int | None] | None] = {}
     for line in listing.lines:
+        if line.section is None:
+            continue
         if line.label_def:
             if line.label_def in symtab.global_symbols:
                 line.addr = symtab.global_symbols[line.label_def].value
@@ -284,17 +315,29 @@ def assign_addresses(listing: Listing, symtab: SymbolTable):
                 line.addr = symtab.local_symbols[(listing.obj_name, line.label_def)].value
             else:
                 raise ValueError(line)
-            last_addr = (line.addr, line.offset)
-        elif last_addr is not None and line.addr is not None:
-            if last_addr[1] is None:
-                line.addr = last_addr[0]
+            last_addr[line.section] = (line.addr, line.offset)
+        elif last_addr.get(line.section) and line.addr is not None:
+            la = last_addr[line.section]
+            if la[1] is None:
+                line.addr = la[0]
             else:
-                line.addr = last_addr[0] + (line.offset - last_addr[1])
+                line.addr = la[0] + (line.offset - la[1])
         if line.offset is not None:
-            last_addr = (line.addr, line.offset)
+            last_addr[line.section] = (line.addr, line.offset)
 
 
 def assemble(tool: EtcaToolchain, input_files: list[Path], output: Path, format: str) -> Path:
+    """
+    Assemble all `input_files` into a single file with the corresponding `format`.
+    Uses the toolchain specified by `tool` and writes to `output`.
+
+    if the `format` is `binary`, it shortcuts and directly assembles and links all files together to
+    this one binary file
+
+    Otherwise it assembles all files and generates listings, then reparses those listings into
+    SourceLines and merges those together, then matches that up with the result of `ld` to
+    generate a file annotated listing output.
+    """
     with tool.mktemp():
         if format == "binary":
             object_files = []
@@ -306,22 +349,38 @@ def assemble(tool: EtcaToolchain, input_files: list[Path], output: Path, format:
         object_files = []
         listings = []
         word_count = 64
+
+        # Assemble all files indvidually and collect the listings
         for i, file in enumerate(input_files):
             o, l = tool.gas(file, listing="aln", extras=[
                 "--listing-cont-lines", "0",
-                "--listing-lhs-width", str(word_count)])
+                "--listing-lhs-width", str(word_count),
+                "-R"])
             object_files.append(o)
-            listings.append(Listing.parse(file.name, o.name, l.decode(), word_count))
+            listings.append(Listing.parse(file.name, o.name, l.read_text(), word_count))
+            # print(*listings[-1].lines, sep="\n", end="\n\n")
+
+        # Link together the .elf files
         elf_file = tool.ld(object_files)
-        bin_file = tool.objcopy(elf_file, format="binary")
+        # Extract the final elf file into the various sections
+        bin_files = tool.objcopy_extract(elf_file,
+                                         set(l.section for listing in listings for l in listing.lines if l.section))
+        data = {name: file.read_bytes() for name, file in bin_files.items()}
+        # Get all symbols from the elf file
         symtab = SymbolTable.parse(tool.objdump(elf_file, '-t').decode(), [o.name for o in object_files])
+
+        # Correct the addresses based on what the linker actually did
         for listing in listings:
             assign_addresses(listing, symtab)
+
+        # Combine the listings according to what the linker did
         result = Listing.combine(listings, lambda line: line.label_def is not None)
-        data = bin_file.read_bytes()
         for line in result.lines:
             if line.data is not None:
-                line.data = data[line.offset:line.offset + len(line.data)]
+                line.data = data[line.section][line.offset:line.offset + len(line.data)]
+        # print(*result.lines, sep="\n", end="\n\n")
+
+        # Output the resulting listing
         with output.open("w") as f:
             if format == "tc":
                 result.out_tc(f)
@@ -340,6 +399,8 @@ def main(args, program_name=None):
     tool.mcpuid = settings.mcpuid
     tool.mcmodel = settings.mcmodel
     tool.mpw = settings.mpw
+    if settings.temp:
+        tool.temp_directory = settings.temp
     assemble(tool, settings.files, settings.output, settings.format)
 
 
