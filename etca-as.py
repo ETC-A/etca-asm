@@ -80,15 +80,15 @@ class Listing:
             encoding = ' '.join(f'0x{b:02x}' for b in (line.data or ()))
             f.write(f"{encoding:10} # {line.text}\n")
 
-    def out_annotated(self, f: TextIO):
-        address_width = 2
-        address_mask = 0xFFFF
+    def out_annotated(self, f: TextIO, address_width: int = 16):
+        width = address_width // 8
+        address_mask = 2 ** (address_width) - 1
         for line in self.lines:
             if line.addr is not None:
                 encoding = ' '.join('{:02x}'.format(b) for b in line.data or ())
-                f.write(f"0x{line.addr & address_mask:0{address_width * 2}x}: {encoding:30}# {line.text}\n")
+                f.write(f"0x{line.addr & address_mask:0{width * 2}x}: {encoding:30}# {line.text}\n")
             else:
-                f.write(f"{'':{address_width * 2 + 2}}  {'':30}# {line.text}\n")
+                f.write(f"{'':{width * 2 + 2}}  {'':30}# {line.text}\n")
 
     def out_tc64(self, f: TextIO):
         bs = b''
@@ -193,6 +193,7 @@ class EtcaToolchain:
     program_location: Path | None = None
     march: str = None
     mcpuid: str = None
+    link_script: str = None
     temp_directory: Path = None
     _counter: int = 0
 
@@ -236,6 +237,8 @@ class EtcaToolchain:
         arguments = []
         arguments.extend(input_files)
         arguments.extend(["-o", output_file])
+        if self.link_script:
+            arguments.extend(["-T", self.link_script])
         res = self.run("ld", arguments)
         res.check_returncode()
         return output_file
@@ -289,15 +292,22 @@ def parse_arguments(args, program_name=None):
                         help="Outputs in the corresponding format")
     parser.add_argument("-o", "--output", action="store", type=Path, default="a.out",
                         help="The file to write the result to. Defaults to 'a.out`")
-    passed_on = parser.add_argument_group(title="GAS arguments",
-                                          description="These arguments are passed on to gas unchanged")
-    passed_on.add_argument("-march", "--march", action="store")
-    passed_on.add_argument("-mcpuid", "--mcpuid", action="store", )
-    passed_on.add_argument("-mcmodel", "--mcmodel", action="store")
-    passed_on.add_argument("-mpw", "--mpw", action="store")
-    passed_on.add_argument("--temp", action="store", type=Path,
-                           help="A temporary directory to put temporary files into."
-                                " Will not be cleaned up automatically")
+    parser.add_argument("--temp", action="store", type=Path,
+                        help="A temporary directory to put temporary files into."
+                             " Will not be cleaned up automatically")
+
+    passed_on_asm = parser.add_argument_group(title="GAS arguments",
+                                          description="These arguments are passed onto gas unchanged")
+    passed_on_asm.add_argument("-march", "--march", action="store")
+    passed_on_asm.add_argument("-mcpuid", "--mcpuid", action="store", )
+    passed_on_asm.add_argument("-mcmodel", "--mcmodel", action="store")
+    passed_on_asm.add_argument("-mpw", "--mpw", action="store")
+
+
+    passed_on_ld = parser.add_argument_group(title="LD arguments",
+                                          description="These arguments are passed onto ld unchanged")
+    passed_on_ld.add_argument("-T", "--script", action="store")
+
     parser.add_argument("files", nargs="+", type=Path,
                         help="The input assembly files. They are assembled individually and then linked together.")
     return parser.parse_args(args)
@@ -352,7 +362,7 @@ def assemble(tool: EtcaToolchain, input_files: list[Path], output: Path, format:
 
         # Assemble all files indvidually and collect the listings
         for i, file in enumerate(input_files):
-            o, l = tool.gas(file, listing="aln", extras=[
+            o, l = tool.gas(file, listing="alnm", extras=[
                 "--listing-cont-lines", "0",
                 "--listing-lhs-width", str(word_count),
                 "-R"])
@@ -374,7 +384,7 @@ def assemble(tool: EtcaToolchain, input_files: list[Path], output: Path, format:
             assign_addresses(listing, symtab)
 
         # Combine the listings according to what the linker did
-        result = Listing.combine(listings, lambda line: line.label_def is not None)
+        result = Listing.combine(listings)#, lambda line: line.label_def is not None)
         for line in result.lines:
             if line.data is not None:
                 line.data = data[line.section][line.offset:line.offset + len(line.data)]
@@ -387,10 +397,22 @@ def assemble(tool: EtcaToolchain, input_files: list[Path], output: Path, format:
             elif format == "tc-64":
                 result.out_tc64(f)
             elif format == "annotated":
-                result.out_annotated(f)
+                result.out_annotated(f, parse_mpw(tool.mpw))
             else:
                 raise ValueError(format)
 
+def parse_mpw(value):
+    try:
+        return int(value)
+    except ValueError:
+        return {
+            'x': 16,
+            'xword': 16,
+            'd': 32,
+            'dword': 32,
+            'q': 64,
+            'qword': 64
+        }.get(value, 16)
 
 def main(args, program_name=None):
     settings = parse_arguments(args, program_name)
@@ -399,6 +421,7 @@ def main(args, program_name=None):
     tool.mcpuid = settings.mcpuid
     tool.mcmodel = settings.mcmodel
     tool.mpw = settings.mpw
+    tool.link_script = settings.script
     if settings.temp:
         tool.temp_directory = settings.temp
     assemble(tool, settings.files, settings.output, settings.format)
