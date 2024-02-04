@@ -10,6 +10,11 @@ from string import hexdigits
 from tempfile import TemporaryDirectory
 from typing import TextIO, Iterable
 
+# AbelianGrape:
+#   When we encounter .data, .text, .bss, or .section <name> inside a macro
+#   definition, we currently switch sections. We shouldn't do that.
+#   Macro definitions are cleanly delimited by .macro and .endm and as far
+#   as I know, they can't be nested.
 
 @dataclass
 class SourceLine:
@@ -37,9 +42,9 @@ class SourceLine:
         label = None
         if rest.strip() and rest.strip()[-1] == ':' and rest.strip()[:-1].isidentifier():
             label = rest.strip()[:-1]
-        elif rest.strip() and rest.strip().startswith('.'):
-            match rest.strip().split():
-                case ('.text' | '.data' as sec, *_):
+        elif rest.strip() and rest.strip("> ").startswith('.'):
+            match rest.strip("> ").split():
+                case ('.text' | '.data' | '.bss' as sec, *_):
                     section = sec
                 case ('.section', name):
                     section = name
@@ -122,6 +127,11 @@ class Listing:
                 if not line.data:
                     if keep_filter(line):
                         current.append(line)
+                # Massive hack, but we need to be sure that we don't try to steal bytes from the
+                # output for .bss lines containing .space. The right thing to do is handle
+                # .space somewhere.
+                elif line.section.startswith(".bss"):
+                    line.data = None
                 else:
                     current.append(line)
                     fragments.append((line.addr, current))
@@ -256,6 +266,8 @@ class EtcaToolchain:
         output_files = {}
         arguments = [input_file]
         for section in sections:
+            if section.startswith(".bss"):
+                continue
             output_files[section] = self._get_out(f"objcopy-{section}", f".{format}")
             arguments.extend(["--dump-section", f"{section}={output_files[section]}"])
         res = self.run("objcopy", arguments)
