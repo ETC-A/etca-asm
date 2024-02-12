@@ -414,6 +414,8 @@ def assemble(tool: EtcaToolchain, input_files: list[Path], output: Path, format:
                 raise ValueError(format)
 
 def parse_mpw(value):
+    if value is None:
+        return 16
     try:
         return int(value)
     except ValueError:
